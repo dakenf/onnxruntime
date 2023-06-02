@@ -8,3 +8,4 @@ import {onnxruntimeBackend} from './backend';
 registerBackend('cpu', onnxruntimeBackend, 100);
 registerBackend('cuda', onnxruntimeBackend, 100);
 registerBackend('dml', onnxruntimeBackend, 100);
+registerBackend('tensorrt', onnxruntimeBackend, 100);

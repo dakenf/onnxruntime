@@ -29,6 +29,8 @@ endif()
 include_directories(${CMAKE_JS_INC})
 include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/session)
 include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/dml)
+include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/tensorrt)
+include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/coreml)
 include_directories(${CMAKE_SOURCE_DIR}/node_modules/node-addon-api)
 
 # source files
@@ -52,6 +54,10 @@ if (WIN32)
 else()
   target_link_directories(onnxruntime_binding PRIVATE ${ONNXRUNTIME_BUILD_DIR})
 endif()
+
+if (APPLE)
+  add_definitions(-DHAS_COREML)
+endif ()
 
 if (WIN32)
   target_link_libraries(onnxruntime_binding PRIVATE onnxruntime.lib)
