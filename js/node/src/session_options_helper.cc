@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "common.h"
+#include "cuda_check_helper.h"
 #include "session_options_helper.h"
 #ifdef _WIN32
 #include "dml_provider_factory.h"
@@ -53,8 +54,10 @@ void ParseExecutionProviders(const Napi::Array epList, Ort::SessionOptions &sess
     if (name == "cpu") {
       // TODO: handling CPU EP options
     } else if (name == "cuda") {
+      CheckCudaLibraries(epList.Env());
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, deviceId));
     } else if (name == "tensorrt") {
+      CheckTensorRtLibraries(epList.Env());
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, deviceId));
     } else if (name == "dml") {
 #ifdef _WIN32
