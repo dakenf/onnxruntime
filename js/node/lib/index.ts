@@ -9,3 +9,4 @@ registerBackend('cpu', onnxruntimeBackend, 100);
 registerBackend('cuda', onnxruntimeBackend, 100);
 registerBackend('dml', onnxruntimeBackend, 100);
 registerBackend('tensorrt', onnxruntimeBackend, 100);
+registerBackend('coreml', onnxruntimeBackend, 100);

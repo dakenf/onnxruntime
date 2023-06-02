@@ -71,7 +71,7 @@ void ParseExecutionProviders(const Napi::Array epList, Ort::SessionOptions &sess
       ORT_NAPI_THROW_ERROR(epList.Env(), "DirectML EP is supported only on Windows");
 #endif
     } else if (name == "coreml") {
-#ifdef HAS_COREML
+#ifdef __APPLE__
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(sessionOptions, coreMlFlags));
 #else
       ORT_NAPI_THROW_ERROR(epList.Env(), "CoreML EP is supported only on macOS");
