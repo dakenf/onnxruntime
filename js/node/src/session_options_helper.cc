@@ -13,7 +13,7 @@
 #include "dml_provider_factory.h"
 #endif
 #include "tensorrt_provider_factory.h"
-#ifdef HAS_COREML
+#ifdef __APPLE__
 #include "coreml_provider_factory.h"
 #endif
 
@@ -53,9 +53,17 @@ void ParseExecutionProviders(const Napi::Array epList, Ort::SessionOptions &sess
     if (name == "cpu") {
       // TODO: handling CPU EP options
     } else if (name == "cuda") {
+#ifndef __APPLE__
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, deviceId));
+#else
+      ORT_NAPI_THROW_ERROR(epList.Env(), "CUDA EP is not supported on macOS");
+#endif
     } else if (name == "tensorrt") {
+#ifndef __APPLE__
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, deviceId));
+#else
+      ORT_NAPI_THROW_ERROR(epList.Env(), "TensorRT EP is not supported on macOS");
+#endif
     } else if (name == "dml") {
 #ifdef _WIN32
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, deviceId));

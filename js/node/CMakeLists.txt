@@ -55,10 +55,6 @@ else()
   target_link_directories(onnxruntime_binding PRIVATE ${ONNXRUNTIME_BUILD_DIR})
 endif()
 
-if (APPLE)
-  add_definitions(-DHAS_COREML)
-endif ()
-
 if (WIN32)
   target_link_libraries(onnxruntime_binding PRIVATE onnxruntime.lib)
 elseif (APPLE)
