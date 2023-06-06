@@ -9,7 +9,6 @@
 #include "session_options_helper.h"
 #include "tensor_helper.h"
 #include "directml_load_helper.h"
-#include "shared_providers_helper.h"
 
 Napi::FunctionReference InferenceSessionWrap::constructor;
 Ort::Env *InferenceSessionWrap::ortEnv;
@@ -211,10 +210,10 @@ Napi::Value InferenceSessionWrap::ListSupportedBackends(const Napi::CallbackInfo
   Napi::EscapableHandleScope scope(env);
   Napi::Array result = Napi::Array::New(env);
 
-  auto createObject = [&env](const std::string& name, const bool requirementsInstalled) -> Napi::Object {
+  auto createObject = [&env](const std::string& name, const bool bundled) -> Napi::Object {
     Napi::Object result = Napi::Object::New(env);
     result.Set("name", name);
-    result.Set("requirementsInstalled", requirementsInstalled);
+    result.Set("bundled", bundled);
     return result;
   };
 
@@ -224,10 +223,10 @@ Napi::Value InferenceSessionWrap::ListSupportedBackends(const Napi::CallbackInfo
   result.Set(result.Length(), createObject("dml", true));
 #endif
 #ifdef USE_CUDA
-  result.Set(result.Length(), createObject("cuda", IsSharedProviderPresent(env, L"onnxruntime_providers_cuda")));
+  result.Set(result.Length(), createObject("cuda", false));
 #endif
 #ifdef USE_TENSORRT
-  result.Set(result.Length(), createObject("tensorrt", IsSharedProviderPresent(env, L"onnxruntime_providers_tensorrt")));
+  result.Set(result.Length(), createObject("tensorrt", false));
 #endif
 #ifdef USE_COREML
   result.Set(result.Length(), createObject("coreml", true));

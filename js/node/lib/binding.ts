@@ -36,7 +36,7 @@ export declare namespace Binding {
 
   export interface SupportedBackend {
     name: string;
-    requirementsInstalled: boolean;
+    bundled: boolean;
   }
 }
 

@@ -9,7 +9,6 @@
 
 #include "common.h"
 #include "session_options_helper.h"
-#include "shared_providers_helper.h"
 #ifdef USE_DML
 #include "dml_provider_factory.h"
 #endif
@@ -63,16 +62,10 @@ void ParseExecutionProviders(const Napi::Array epList, Ort::SessionOptions &sess
       // TODO: handling CPU EP options
 #ifdef USE_CUDA
     } else if (name == "cuda") {
-      if (!IsSharedProviderPresent(epList.Env(), L"onnxruntime_providers_cuda")) {
-        ORT_NAPI_THROW_ERROR(epList.Env(), "onnxruntime_providers_cuda", installationInstructions);
-      }
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, deviceId));
 #endif
 #ifdef USE_TENSORRT
     } else if (name == "tensorrt") {
-      if (!IsSharedProviderPresent(epList.Env(), L"onnxruntime_providers_tensorrt")) {
-        ORT_NAPI_THROW_ERROR(epList.Env(), "onnxruntime_providers_tensorrt", installationInstructions);
-      }
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, deviceId));
 #endif
 #ifdef USE_DML
