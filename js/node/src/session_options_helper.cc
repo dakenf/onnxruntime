@@ -51,12 +51,6 @@ void ParseExecutionProviders(const Napi::Array epList, Ort::SessionOptions &sess
       }
     }
 
-#ifdef WIN32
-    const auto *const installationInstructions = " library could not be found. Please download onnxruntime-windows-gpu and put libraries into your PATH.";
-#else
-    const auto *const installationInstructions = " library could not be found. Please download and install onnxruntime-linux-gpu.";
-#endif
-
     // CPU execution provider
     if (name == "cpu") {
       // TODO: handling CPU EP options
