@@ -221,13 +221,12 @@ export const run = async(
       }
 
       // const stack = wasm.stackSave();
-      const dimsOffset = wasm._malloc(BigInt(8 * dims.length));
+      const dimsOffset = wasm._malloc(8 * dims.length);
       try {
         let dimIndex = Number(dimsOffset) / 8;
         dims.forEach(d => wasm.HEAPU64[dimIndex++] = BigInt(d));
         const tensor = wasm._OrtCreateTensor(
-            tensorDataTypeStringToEnum(dataType), BigInt(dataOffset), BigInt(dataByteLength), BigInt(dimsOffset),
-            BigInt(dims.length));
+            tensorDataTypeStringToEnum(dataType), dataOffset, dataByteLength, dimsOffset, dims.length);
         if (tensor === BigInt(0)) {
           throw new Error('Can\'t create a tensor');
         }
@@ -262,9 +261,9 @@ export const run = async(
       // support RunOptions
       let errorCode = wasm._OrtRun(
           // @ts-ignore
-          sessionHandle, BigInt(inputNamesOffset), BigInt(inputValuesOffset), BigInt(inputCount),
-          BigInt(outputNamesOffset), BigInt(outputCount),
-          BigInt(outputValuesOffset), runOptionsHandle);
+          sessionHandle, inputNamesOffset, inputValuesOffset, inputCount,
+          outputNamesOffset, outputCount,
+          outputValuesOffset, runOptionsHandle);
       console.log('run', errorCode);
 
       // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -281,16 +280,16 @@ export const run = async(
 
           // const beforeGetTensorDataStack = wasm.stackSave();
           // stack allocate 4 pointer value
-          const tensorDataOffset = wasm._malloc(BigInt(4 * 8));
+          const tensorDataOffset = wasm._malloc(4 * 8);
 
           let type: Tensor.Type|undefined, dataOffset = BigInt(0);
           try {
             console.log('get tensor data', tensorDataOffset)
             errorCode = wasm._OrtGetTensorData(
                 // @ts-ignore
-                tensor, BigInt(tensorDataOffset), BigInt(tensorDataOffset + 8),
+                tensor, tensorDataOffset, tensorDataOffset + 8,
                 // @ts-ignore
-                BigInt(tensorDataOffset + 16), BigInt(tensorDataOffset + 24));
+                tensorDataOffset + 16, tensorDataOffset + 24);
             if (errorCode) {
               throw new Error(`Can't access output tensor data. error code = ${errorCode}`);
             }

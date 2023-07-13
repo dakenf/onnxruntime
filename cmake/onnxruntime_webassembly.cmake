@@ -248,8 +248,10 @@ else()
   target_link_options(onnxruntime_webassembly PRIVATE
     "SHELL:-s EXPORTED_RUNTIME_METHODS=${EXPORTED_RUNTIME_METHODS}"
     "SHELL:-s EXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS}"
-    "SHELL:-s INITIAL_MEMORY=8589934592"
-    "SHELL:-s MAXIMUM_MEMORY=17179869184"
+    "SHELL:-s INITIAL_MEMORY=4294967296"
+    "SHELL:-s MAXIMUM_MEMORY=4294967296"
+#    "SHELL:-s INITIAL_MEMORY=8589934592"
+#    "SHELL:-s MAXIMUM_MEMORY=17179869184"
     "SHELL:-s EXIT_RUNTIME=0"
 #    "SHELL:-s ALLOW_MEMORY_GROWTH=1"
     "SHELL:-s MODULARIZE=1"
@@ -273,7 +275,8 @@ else()
       --pre-js "${ONNXRUNTIME_ROOT}/wasm/js_internal_api.js"
       "SHELL:-s ASYNCIFY=2"
       "SHELL:-s ASYNCIFY_STACK_SIZE=65536"
-      "SHELL:-s ASYNCIFY_EXPORTS=['OrtRun','_OrtRun']"
+      "SHELL:-s ASYNCIFY_EXPORTS=['OrtRun']"
+      "SHELL:-s SIGNATURE_WRAPPERS=['OrtRun:_pppppppp','OrtGetTensorData:_ppppp','OrtCreateTensor:p_pppp']"
       "SHELL:-s ${MEMORY_FLAG}"
     )
   endif()
