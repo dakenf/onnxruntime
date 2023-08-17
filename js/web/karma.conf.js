@@ -98,7 +98,8 @@ module.exports = function(config) {
           {debug: true, base: 'Chrome', flags: ['--remote-debugging-port=9333', '--enable-features=SharedArrayBuffer']},
       ChromeCanaryTest: {
         base: 'ChromeCanary',
-        flags: ['--enable-features=SharedArrayBuffer', '--enable-experimental-web-platform-features']
+        flags: ['--enable-features=SharedArrayBuffer', '--enable-experimental-web-platform-features', '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'],
+        chromeFlags: ['--experimental-wasm-memory64', '--experimental-wasm-stack-switching', '--experimental-wasm-type-reflection', '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'],
       },
       ChromeCanaryDebug: {
         debug: true,
@@ -109,13 +110,13 @@ module.exports = function(config) {
         ]
       },
       ChromeWebGpuProfileTest: {
-        base: 'Chrome',
+        base: 'ChromeCanary',
         flags:
             ['--window-size=1,1', '--enable-features=SharedArrayBuffer', '--disable-dawn-features=disallow_unsafe_apis']
       },
       ChromeWebGpuProfileDebug: {
         debug: true,
-        base: 'Chrome',
+        base: 'ChromeCanary',
         flags: [
           '--remote-debugging-port=9333',
           '--enable-features=SharedArrayBuffer',

@@ -303,7 +303,7 @@ else()
       "SHELL:-s SAFE_HEAP=0"
       "SHELL:-s STACK_OVERFLOW_CHECK=0"
       "SHELL:-s DEMANGLE_SUPPORT=0"
-      --closure 1
+#      --closure 1
     )
   endif()
 
