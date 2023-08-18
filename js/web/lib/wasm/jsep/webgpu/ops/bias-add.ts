@@ -38,7 +38,7 @@ const createBiasSplitGeluProgramInfo =
         const dataType = tensorTypeToWsglType(inputs[0].dataType);
         const channels = input.dims[2];
         const blockSize = channels / 320;
-        const outputSize = gridSize;
+        const outputSize = gridSize * 320;
 
         const getShaderSource = (shaderHelper: ShaderHelper) => `
   const TPB = 320;
@@ -53,8 +53,8 @@ const createBiasSplitGeluProgramInfo =
         return;
     }
     let blockIdx = global_idx / ${channels};
-    let threadIdx = global_idx % ${channels};
-    
+    let threadIdx = global_idx % 320;
+
     var baseOffset = blockIdx * ${channels} + threadIdx;
     var biasOffset = threadIdx;
 

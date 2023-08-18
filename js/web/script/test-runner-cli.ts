@@ -476,7 +476,7 @@ async function main() {
               args.debug             ? 'debug' :
                                        'test',
           webgpu, webnn, config.options.globalEnvFlags?.webgpu?.profilingMode === 'default');
-      const karmaArgs = ['karma', 'start', `--browsers ${browser}`];
+      const karmaArgs = ['karma', 'start', `--browsers ChromeCanaryTest`];
       if (args.debug) {
         karmaArgs.push('--log-level info --timeout-mocha 9999999');
       } else {
@@ -600,30 +600,31 @@ async function main() {
   }
 
   function selectChromeBrowser(mode: 'debug'|'perf'|'test', webgpu: boolean, webnn: boolean, profile: boolean) {
-    if (webgpu) {
-      switch (mode) {
-        case 'debug':
-          return profile ? 'ChromeWebGpuProfileDebug' : 'ChromeDebug';
-        default:
-          return profile ? 'ChromeWebGpuProfileTest' : 'ChromeTest';
-      }
-    } else if (webnn) {
-      switch (mode) {
-        case 'debug':
-          return 'ChromeCanaryDebug';
-        default:
-          return 'ChromeCanaryTest';
-      }
-    } else {
-      switch (mode) {
-        case 'debug':
-          return 'ChromeDebug';
-        case 'perf':
-          return 'ChromeTest';
-        default:
-          return 'ChromeTestHeadless';
-      }
-    }
+    return 'ChromeCanaryTest';
+    // if (webgpu) {
+    //   switch (mode) {
+    //     case 'debug':
+    //       return profile ? 'ChromeWebGpuProfileDebug' : 'ChromeDebug';
+    //     default:
+    //       return profile ? 'ChromeWebGpuProfileTest' : 'ChromeTest';
+    //   }
+    // } else if (webnn) {
+    //   switch (mode) {
+    //     case 'debug':
+    //       return 'ChromeCanaryDebug';
+    //     default:
+    //       return 'ChromeCanaryTest';
+    //   }
+    // } else {
+    //   switch (mode) {
+    //     case 'debug':
+    //       return 'ChromeDebug';
+    //     case 'perf':
+    //       return 'ChromeTest';
+    //     default:
+    //       return 'ChromeTestHeadless';
+    //   }
+    // }
   }
 }
 

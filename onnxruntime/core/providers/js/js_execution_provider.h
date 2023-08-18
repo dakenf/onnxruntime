@@ -39,13 +39,13 @@ class JsExecutionProvider : public IExecutionProvider {
   std::shared_ptr<KernelRegistry> GetKernelRegistry() const override;
   std::unique_ptr<onnxruntime::IDataTransfer> GetDataTransfer() const override;
 
-  DataLayout GetPreferredLayout() const override { return DataLayout::NHWC; }
+  DataLayout GetPreferredLayout() const override { return DataLayout::NCHW; }
 
   FusionStyle GetFusionStyle() const override { return FusionStyle::FilteredGraphViewer; }
 
   // JSEP disallow concurrent run because actual implementation (eg. WebGPU backend) relies on global states to work,
   // and concurrent run with async function may mess up the states and cause undefined behavior.
-  bool ConcurrentRunSupported() const override { return false; }
+  bool ConcurrentRunSupported() const override { return true; }
 
   std::vector<AllocatorPtr> CreatePreferredAllocators() override;
 };

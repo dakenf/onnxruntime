@@ -57,8 +57,8 @@ const createBiasSplitGeluProgramInfo =
         return;
     }
     let blockIdx = global_idx / ${halfHiddenSize};
-    let threadIdx = global_idx % ${halfHiddenSize};
-    
+    let threadIdx = global_idx % 256;
+
     var indexInput = blockIdx * ${halfHiddenSize} * 2 + threadIdx;
     var indexOutput = blockIdx * ${halfHiddenSize} + threadIdx;
     var indexBias = threadIdx;
@@ -66,7 +66,7 @@ const createBiasSplitGeluProgramInfo =
     for (var h: u32 = 0u; h < ${blockSize}; h++) {
       let valueLeft = input[indexInput] + bias[indexBias];
       let valueRight = input[indexInput + ${halfHiddenSize}] + bias[indexBias + ${halfHiddenSize}];
-      
+
       let geluRight = valueRight * 0.5 * (erf_vf32(valueRight / M_SQRT2) + 1);
       output[indexOutput] = valueLeft * geluRight;
       indexInput += TPB;

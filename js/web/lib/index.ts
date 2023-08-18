@@ -17,9 +17,9 @@ if (!BUILD_DEFS.DISABLE_WEBGL) {
 
 if (!BUILD_DEFS.DISABLE_WASM) {
   const wasmBackend = require('./backend-wasm').wasmBackend;
-  if (!BUILD_DEFS.DISABLE_WEBGPU && typeof navigator !== 'undefined' && navigator.gpu) {
+  // if (!BUILD_DEFS.DISABLE_WEBGPU && typeof navigator !== 'undefined' && navigator.gpu) {
     registerBackend('webgpu', wasmBackend, 1);
-  }
+  // }
   registerBackend('cpu', wasmBackend, 1);
   registerBackend('wasm', wasmBackend, 1);
   registerBackend('xnnpack', wasmBackend, 9);
