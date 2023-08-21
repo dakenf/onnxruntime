@@ -1,0 +1,118 @@
+[
+  {
+    "name": "MultiHeadAttention Basic",
+    "operator": "MultiHeadAttention",
+    "opset": { "domain": "com.microsoft", "version": 1 },
+    "attributes": [
+      { "name": "num_heads", "data": 2, "type": "int" }
+    ],
+    "cases": [
+      {
+        "name": "T[0]",
+        "inputs": [
+          {
+            "data": [1, 2, 3, 4, 5, 6, 7, 8],
+            "dims": [1, 2, 4],
+            "type": "float32"
+          },
+          {
+            "data": [1, 1, 1, 1, 2, 2, 2, 2],
+            "dims": [1, 2, 4],
+            "type": "float32"
+          },
+          {
+            "data": [1, 2, 3, 4, 5, 6, 7, 8],
+            "dims": [1, 2, 4],
+            "type": "float32"
+          }
+        ],
+        "outputs": [
+          {
+            "data": [4.571832656860352,5.571832656860352,6.971858501434326,7.971858501434326,4.998325824737549,5.998325824737549,6.999900817871094,7.999900817871094],
+            "dims": [1, 2, 4],
+            "type": "float32"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MultiHeadAttention Basic with bias",
+    "operator": "MultiHeadAttention",
+    "opset": { "domain": "com.microsoft", "version": 1 },
+    "attributes": [
+      { "name": "num_heads", "data": 2, "type": "int" }
+    ],
+    "cases": [
+     {
+       "name": "T[0]",
+       "inputs": [
+         {
+           "data": [1, 2, 3, 4, 5, 6, 7, 8],
+           "dims": [1, 2, 4],
+           "type": "float32"
+         },
+         {
+           "data": [1, 1, 1, 1, 2, 2, 2, 2],
+           "dims": [1, 2, 4],
+           "type": "float32"
+         },
+         {
+           "data": [1, 2, 3, 4, 5, 6, 7, 8],
+           "dims": [1, 2, 4],
+           "type": "float32"
+         },
+          {
+            "data": [1, 2, 3, 4, 5, 6, 7, 8],
+            "dims": [8],
+            "type": "float32"
+          }
+       ],
+       "outputs": [
+         {
+           "data": [4.94333553314209,5.943336009979248,6.9997992515563965,7.9997992515563965,4.9997992515563965,5.9997992515563965,6.999999523162842,7.999999523162842],
+           "dims": [1, 2, 4],
+           "type": "float32"
+         }
+       ]
+     }
+    ]
+  },
+  {
+      "name": "MultiHeadAttention two heads",
+      "operator": "MultiHeadAttention",
+      "opset": { "domain": "com.microsoft", "version": 1 },
+      "attributes": [
+        { "name": "num_heads", "data": 2, "type": "int" }
+      ],
+      "cases": [
+        {
+          "name": "T[0]",
+          "inputs": [
+            {
+              "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+              "dims": [1, 2, 8],
+              "type": "float32"
+            },
+            {
+              "data": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4],
+              "dims": [1, 2, 8],
+              "type": "float32"
+            },
+            {
+              "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+              "dims": [1, 2, 8],
+              "type": "float32"
+            }
+          ],
+          "outputs": [
+            {
+              "data": [8.99963665008545,9.99963665008545,10.99963665008545,11.999635696411133,13,14,15,16,9,10,11,12,13,14,15,16],  // The attention scores are complex. This is a placeholder.
+              "dims": [1, 2, 8],
+              "type": "float32"
+            }
+          ]
+        }
+      ]
+    }
+]

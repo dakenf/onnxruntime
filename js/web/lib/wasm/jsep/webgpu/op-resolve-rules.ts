@@ -24,6 +24,7 @@ import * as unaryOps from './ops/unary-op';
 import {ComputeContext} from './types';
 import {biasSplitGelu} from './ops/bias-split-gelu';
 import {biasAdd} from './ops/bias-add';
+import { attention, multiHeadAttention, parseMultiHeadAttentionAttributes } from './ops/multi-head-attentiion'
 
 export type RunFunction = (context: ComputeContext, attribute?: unknown) => void;
 export type ParseAttributeFunction = (attributeRaw: unknown) => unknown;
@@ -40,6 +41,7 @@ export const WEBGPU_OP_RESOLVE_RULES: Map<string, OperatorImplementation> = new 
   ['Asinh', [unaryOps.asinh]],
   ['Atan', [unaryOps.atan]],
   ['Atanh', [unaryOps.atanh]],
+  ['Attention', [attention, parseMultiHeadAttentionAttributes]],
   // TODO: support new attributes for AveragePool-10
   ['AveragePool', [pool.averagePool, pool.parseAveragePoolAttributes]],
   ['BiasAdd', [biasAdd]],
@@ -71,6 +73,7 @@ export const WEBGPU_OP_RESOLVE_RULES: Map<string, OperatorImplementation> = new 
   // TODO: support new attributes for MaxPool-8 and MaxPool-10
   ['MaxPool', [pool.maxPool, pool.parseMaxPoolAttributes]],
   ['Mul', [binaryOps.mul]],
+  ['MultiHeadAttention', [multiHeadAttention, parseMultiHeadAttentionAttributes]],
   ['Neg', [unaryOps.neg]],
   ['Pow', [binaryOps.pow]],
   ['Reciprocal', [unaryOps.reciprocal]],

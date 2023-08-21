@@ -46,7 +46,7 @@ const permFunctionBody = (perm: number[], rank: number, input: IndicesHelper, ou
   return reverseFunc.join('\n');
 };
 
-export const createTransposeProgramInfo = (inputTensor: TensorView, permAttr: number[]): ProgramInfo => {
+export const createTransposeProgramInfo = (inputTensor: TensorView, permAttr: number[], reshapeOutput?: number[]): ProgramInfo => {
   const dataType = inputTensor.dataType;
   const inputShape = inputTensor.dims;
   const perm = getAdjustedPerm(inputShape, permAttr);
@@ -77,7 +77,7 @@ export const createTransposeProgramInfo = (inputTensor: TensorView, permAttr: nu
   }`;
   return {
     ...transposeProgramMetadata,
-    outputs: [{dims: outputShape, dataType: inputTensor.dataType, gpuDataType: GpuDataType.default}],
+    outputs: [{dims: reshapeOutput || outputShape, dataType: inputTensor.dataType, gpuDataType: GpuDataType.default}],
     getShaderSource,
     dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
   };
