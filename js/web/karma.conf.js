@@ -94,8 +94,11 @@ module.exports = function(config) {
       EdgeWebGpuTest: {base: 'Edge', flags: ['--ignore-gpu-blocklist', '--gpu-vendor-id=0x10de']},
       ChromeTest: {base: 'Chrome', flags: ['--enable-features=SharedArrayBuffer']},
       ChromeTestHeadless: {base: 'ChromeHeadless', flags: ['--enable-features=SharedArrayBuffer']},
-      ChromeDebug:
-          {debug: true, base: 'Chrome', flags: ['--remote-debugging-port=9333', '--enable-features=SharedArrayBuffer']},
+      ChromeDebug: {
+        debug: true, base: 'ChromeCanary',
+        flags: ['--remote-debugging-port=9333', '--enable-features=SharedArrayBuffer', '--enable-experimental-web-platform-features', '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'],
+        chromeFlags: ['--experimental-wasm-memory64', '--experimental-wasm-stack-switching', '--experimental-wasm-type-reflection', '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'],
+      },
       ChromeCanaryTest: {
         base: 'ChromeCanary',
         flags: ['--enable-features=SharedArrayBuffer', '--enable-experimental-web-platform-features', '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'],

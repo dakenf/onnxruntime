@@ -10,14 +10,14 @@ import {ShaderHelper} from './common';
 import {getActicationSnippet, InternalActivationAttributes} from './fuse-utils';
 
 
-const createMatmulProgramMetadata = (hasBias: boolean, cacheHint: string) => ({
+export const createMatmulProgramMetadata = (hasBias: boolean, cacheHint: string) => ({
   name: 'MatMul',
   inputTypes: hasBias ? [GpuDataType.default, GpuDataType.default, GpuDataType.default] :
                         [GpuDataType.default, GpuDataType.default],
   cacheHint
 });
 
-const createMatmulProgramInfo =
+export const createMatmulProgramInfo =
     (metadata: ProgramMetadata, inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes):
         ProgramInfo => {
           const aShape = inputs[0].dims;

@@ -1,0 +1,87 @@
+[
+  {
+    "name": "Attention Basic",
+    "operator": "Attention",
+    "opset": { "domain": "com.microsoft", "version": 1 },
+    "attributes": [
+      { "name": "num_heads", "data": 1, "type": "int" }
+    ],
+    "cases": [
+      {
+        "name": "T[0]",
+        "inputs": [
+          {
+            "data": [1, 2, 3, 4, 5, 6, 7, 8],
+            "dims": [1, 2, 4],
+            "type": "float32"
+          },
+          {
+            "data": [1, 2, 3,
+             4, 5, 6,
+              7, 8, 9,
+               10, 11, 12],
+            "dims": [4, 3],
+            "type": "float32"
+          },
+          {
+            "data": [1, 2, 3],
+            "dims": [3],
+            "type": "float32"
+          }
+        ],
+        "outputs": [
+          {
+            "data": [213,213],
+            "dims": [1, 2, 1],
+            "type": "float32"
+          }
+        ]
+      }
+    ]
+  },
+  {
+      "name": "Attention Basic",
+      "operator": "Attention",
+      "opset": { "domain": "com.microsoft", "version": 1 },
+      "attributes": [
+        { "name": "num_heads", "data": 2, "type": "int" }
+      ],
+      "cases": [
+        {
+          "name": "T[0]",
+          "inputs": [
+            {
+              "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],  // Q for batch size of 2 with 2 heads
+              "dims": [2, 2, 8],  // [BatchSize, NumHeads, SeqLen*HeadDim]
+              "type": "float32"
+            },
+            {
+              "data": [1, 1, 1, 1, 2, 2,
+                       2, 2, 3, 3, 3, 3,
+                       4, 4, 4, 4, 1, 1,
+                       1, 1, 2, 2, 2, 2,
+                       3, 3, 3, 3, 4, 4,
+                       4, 4, 4, 4, 4, 4,
+                       4, 4, 4, 4, 4, 4,
+                       4, 4, 4, 4, 4, 4],  // K for batch size of 2 with 2 heads
+              "dims": [8, 6],  // [BatchSize, NumHeads, SeqLen*HeadDim]
+              "type": "float32"
+            },
+            {
+              "data": [1, 2, 3, 4, 5, 6],  // V for batch size of 2 with 2 heads
+              "dims": [6],  // [BatchSize, NumHeads, SeqLen*HeadDim]
+              "type": "float32"
+            }
+          ],
+          "outputs": [
+            {
+              "data": [320,321,320,321,320,321,320,321],  // Placeholder for output data
+              "dims": [2, 2, 2],  // [BatchSize, NumHeads, SeqLen*HeadDim]
+              "type": "float32"
+            }
+          ]
+        }
+      ]
+  }
+
+]

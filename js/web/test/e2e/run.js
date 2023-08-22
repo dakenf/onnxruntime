@@ -123,7 +123,7 @@ async function testAllBrowserCases({hostInKarma}) {
 
 async function runKarma({hostInKarma, main, browser = BROWSER, ortMain = 'ort.min.js'}) {
   const selfHostFlag = hostInKarma ? '--self-host' : '';
-  await runInShell(`npx karma start --single-run --browsers ${browser} ${selfHostFlag} --ort-main=${
+  await runInShell(`npx karma start --single-run --browsers ChromeCanaryTest ${selfHostFlag} --ort-main=${
       ortMain} --test-main=${main} --user-data=${getNextUserDataDir()}`);
 }
 
