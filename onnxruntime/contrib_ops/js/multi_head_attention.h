@@ -17,11 +17,11 @@ class MultiHeadAttention : public JsKernel, AttentionBase {
  public:
   explicit MultiHeadAttention(const OpKernelInfo& info) : JsKernel(info), AttentionBase(info, false) {
     JSEP_INIT_KERNEL_ATTRIBUTE(MultiHeadAttention, ({
-                                 "num_heads" : $1,
-                                 "is_unidirectional" : $2,
-                                 "mask_filter_value" : $3,
+                                 "numHeads" : $1,
+                                 "isUnidirectional" : $2,
+                                 "maskFilterValue" : $3,
                                  "scale" : $4,
-                                 "do_rotary" : $5,
+                                 "doRotary" : $5,
                                }),
                                static_cast<int32_t>(num_heads_),
                                static_cast<int32_t>(is_unidirectional_),
