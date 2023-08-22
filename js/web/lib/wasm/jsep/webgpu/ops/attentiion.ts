@@ -251,7 +251,7 @@ const computeAttentionProbs = (context: ComputeContext, Q: TensorView, Ki: Tenso
   ];
   // TODO: handle mask
 
-  console.log('computeAttentionProbs', parameters, attributes);
+  // console.log('computeAttentionProbs', parameters, attributes);
 
   const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
   const gemmSize = parameters.sequenceLength * parameters.totalSequenceLength;
@@ -283,11 +283,10 @@ const computeAttentionProbs = (context: ComputeContext, Q: TensorView, Ki: Tenso
   @group(0) @binding(${inputDeclarations.length}) var<storage, read_write> output: array<${dataType}>;
 
   ${shaderHelper.mainStart()}
-    let batchIndex = global_idx / gemmSize / numHeads;
-    let headIndex = (global_idx / gemmSize) % numHeads;
-    let outputOffset = batchIndex * headIndex * ${parameters.sequenceLength} * ${parameters.totalSequenceLength};
-    let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * (global_idx / gemmSize);
-    let inputOffset = ${parameters.sequenceLength * parameters.headSize} * (global_idx / gemmSize);
+    let idxWoGemmSize = global_idx / gemmSize;
+    let outputOffset = idxWoGemmSize * ${parameters.sequenceLength * parameters.totalSequenceLength};
+    let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize;
+    let inputOffset = ${parameters.sequenceLength * parameters.headSize} * idxWoGemmSize;
 
     if (global_idx >= ${unitsOfWork}) {
         return;
@@ -339,7 +338,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
 
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
-  console.log('shape', outputShape);
+  // console.log('shape', outputShape);
   const dataType = 'f32';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
@@ -429,14 +428,9 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const K: u32 = ${K}u;
   const numHeads: u32 = ${parameters.numHeads};
   const headSizes = array<u32, 3>(${parameters.headSize}, ${parameters.headSize}, ${parameters.vHeadSize});
-  const lds = array<u32, 3>(${parameters.inputHiddenSize}, ${parameters.inputHiddenSize}, ${parameters.headSize});
   const batchSize: u32 = ${parameters.batchSize};
   const gemmSize: u32 = ${gemmSize};
-  const alpha = 1.0;
-  const beta = 1.0;
-  const lda = ${parameters.inputHiddenSize}u;
   const ldb = ${parameters.hiddenSize + parameters.hiddenSize + parameters.vHiddenSize}u;
-  const ldc = ${parameters.headSize}u;
 
   @group(0) @binding(0) var<storage, read> input: array<${dataType}>;
   @group(0) @binding(1) var<storage, read> weight: array<${dataType}>;
@@ -446,17 +440,14 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   @group(0) @binding(5) var<storage, read_write> outputV: array<${dataType}, ${parameters.inputHiddenSize}>;
 
   ${shaderHelper.mainStart()}
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
     let qkvIndex = global_idx % 3;
+    let idxWoGemmSize = global_idx / gemmSize;
     let N: u32 = headSizes[qkvIndex];
-    let batchIndex = global_idx / gemmSize / numHeads / 3;
-    let headIndex = (global_idx / gemmSize / 3) % numHeads;
-    var smth = 0.0;
+    let batchIndex = idxWoGemmSize / numHeads / 3;
+    let headIndex = (idxWoGemmSize / 3) % numHeads;
 
-    if (global_idx >= ${unitsOfWork}) {
-        return;
-    }
-
-    let inputOffset = batchIndex * ${parameters.sequenceLength} * ${parameters.inputHiddenSize};
+    let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
 
     let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * (headSizes[qkvIndex]);
     let weightsOffset = biasOffset;
@@ -473,7 +464,6 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
       value += input[m * K + k + inputOffset] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}];
     }
 
-    value *= alpha;
     value += bias[gemmOffset % headSizes[qkvIndex] + biasOffset];
     if (qkvIndex == 0) {
       outputQ[gemmOffset + outputOffset] = value;

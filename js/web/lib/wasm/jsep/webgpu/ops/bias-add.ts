@@ -5,6 +5,7 @@ import {DataType, tensorTypeToWsglType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 import {ShaderHelper} from './common';
+import {ShapeUtil} from "../../util";
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
     if (inputs[0].dataType !== DataType.float) {
@@ -34,26 +35,23 @@ const createBiasSplitGeluProgramInfo =
         const input = inputs[0];
         const outputShape = input.dims.slice();
 
-        const gridSize = outputShape[0] * outputShape[1];
         const dataType = tensorTypeToWsglType(inputs[0].dataType);
+        const threadsPerBlock = 64;
         const channels = input.dims[2];
-        const blockSize = channels / 320;
-        const outputSize = gridSize * 320;
+        const blockSize = channels / threadsPerBlock;
+        const outputSize = ShapeUtil.size(outputShape) * threadsPerBlock;
 
         const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const TPB = 320;
-
+  const TPB = ${threadsPerBlock}u;
   @group(0) @binding(0) var<storage, read> input : array<${dataType}>;
   @group(0) @binding(1) var<storage, read> bias : array<${dataType}>;
   @group(0) @binding(2) var<storage, read> residual : array<${dataType}>;
   @group(0) @binding(3) var<storage, read_write> output : array<${dataType}>;
 
   ${shaderHelper.mainStart()}
-    if (global_idx >= ${outputSize}) {
-        return;
-    }
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
     let blockIdx = global_idx / ${channels};
-    let threadIdx = global_idx % 320;
+    let threadIdx = global_idx % TPB;
 
     var baseOffset = blockIdx * ${channels} + threadIdx;
     var biasOffset = threadIdx;

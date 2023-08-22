@@ -19,13 +19,6 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   const extraAddQk = inputs[5];
   const pastKey = inputs[6];
   const pastValue = inputs[7];
-  if (query.dims.length === 5) {
-    throw new Error('Packed QKV of shape (B, L, N, 3, H) not implemented for WebGPU');
-  }
-
-  if (key && key.dims.length === 5) {
-    throw new Error('Packed KV not implemented for WebGPU');
-  }
 
   if (query.dims.length !== 3 && query.dims.length !== 5) {
     throw new Error('Input query is expected to have 3 or 5 dimensions');
@@ -107,8 +100,8 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     inputHiddenSize: 0,
     hiddenSize,
     vHiddenSize,
-    headSize: hiddenSize / attributes.numHeads,
-    vHeadSize: vHiddenSize / attributes.numHeads,
+    headSize: Math.floor(hiddenSize / attributes.numHeads),
+    vHeadSize: Math.floor(vHiddenSize / attributes.numHeads),
     numHeads: attributes.numHeads,
     isUnidirectional: false,
     pastPresentShareBuffer: false,
@@ -151,12 +144,44 @@ const maybeTransposeToBNSHAndAddBias = (context: ComputeContext, batchSize: numb
   }
 };
 
+const unpackQKV = (input1: TensorView, input2?: TensorView) => {
+  const inputToSplit = input2 || input1;
+  const dims = inputToSplit.dims;
+  const offsetBase = dims[0] * dims[1] * dims[2] * dims[4] * 4;
+  const Q = input1 || input2;
+
+  if (input2) {
+    const K = input2;
+    const V = {...input2};
+    V.offset = offsetBase;
+    return [Q, K, V];
+  }
+  const K = {...inputToSplit};
+  K.offset = offsetBase;
+  const V = {...inputToSplit};
+  V.offset = offsetBase * 2;
+
+  return [Q, K, V];
+};
+
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
+  if (context.inputs[0].dims.length === 5 || context.inputs[1]?.dims.length === 5) {
+    const [Q, K, V] = unpackQKV(context.inputs[0], context.inputs[1]);
+    return applyAttention(context, Q, K, V, context.inputs[4], undefined,  context.inputs[6],  context.inputs[7],
+        context.inputs[5], params, attributes);
+  }
 
-  //const outputShape = [params.batchSize, params.sequenceLength, params.vHiddenSize];
-  //const presentKShape = [params.batchSize, attributes.num_heads, params.totalSequenceLength, params.headSize];
-  //const presentVShape = [params.batchSize, attributes.num_heads, params.totalSequenceLength, params.vHeadSize];
+  if (context.inputs[1].dims.length === 5) {
+    // packed KV
+    const dims = context.inputs[1].dims;
+    const Q = context.inputs[0];
+    const K = context.inputs[1];
+    const V = {...context.inputs[1]};
+    V.offset = dims[0] * dims[1] * dims[2] * dims[4];
+    return applyAttention(context, Q, K, V, context.inputs[4], undefined,  context.inputs[6],  context.inputs[7],
+        context.inputs[5], params, attributes);
+  }
 
   const kvBNSH = context.inputs[1] && context.inputs[2] && context.inputs[1].dims.length === 4 &&
     context.inputs[2].dims.length === 4;

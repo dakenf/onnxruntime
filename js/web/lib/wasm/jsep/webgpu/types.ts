@@ -16,6 +16,7 @@ export interface GpuData {
   type: GpuDataType;
   id: GpuDataId;
   buffer: GPUBuffer;
+  offset?: number;
 }
 
 export interface TensorInfo {

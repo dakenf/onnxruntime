@@ -220,6 +220,9 @@ export class WebGpuBackend {
         throw new Error(`no GPU data for input: ${inputs[i].data}`);
       }
       inputDatas[i] = gpuData;
+      if (inputs[i].offset) {
+        inputDatas[i].offset = inputs[i].offset;
+      }
     }
 
     const key = getProgramInfoUniqueKey(program, inputs);

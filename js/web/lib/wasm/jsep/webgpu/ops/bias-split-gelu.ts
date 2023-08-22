@@ -53,9 +53,7 @@ const createBiasSplitGeluProgramInfo =
   ${erfImpl('f32')}
 
   ${shaderHelper.mainStart()}
-    if (global_idx >= ${outputSize}) {
-        return;
-    }
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
     let blockIdx = global_idx / ${halfHiddenSize};
     let threadIdx = global_idx % 256;
 
