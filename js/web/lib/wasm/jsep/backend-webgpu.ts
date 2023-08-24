@@ -119,7 +119,6 @@ export class WebGpuBackend {
         maxComputeWorkgroupSizeX: adapter.limits.maxComputeWorkgroupSizeX,
         maxComputeWorkgroupSizeY: adapter.limits.maxComputeWorkgroupSizeY,
         maxComputeWorkgroupSizeZ: adapter.limits.maxComputeWorkgroupSizeZ,
-        maxBindingsPerBindGroup: adapter.limits.maxBindingsPerBindGroup,
       },
     };
     // WebGPU Spec: Timestamp Queries Inside Passes
@@ -244,6 +243,7 @@ export class WebGpuBackend {
     for (let i = 0; i < programInfo.outputs.length; ++i) {
       // value -1 and -2 are used for creating temporary and persistent outputs.
       // value -3 is used for placeholder output. So -3, -2, -1 and 0, 1, 2, ... are valid
+      // output indices. see type definition of ComputeContextInputsOutputsMapping for more details.
       if (!Number.isInteger(validatedOutputIndices[i]) || validatedOutputIndices[i] < -3 ||
           validatedOutputIndices[i] >= programInfo.outputs.length) {
         throw new Error(`Invalid output index: ${validatedOutputIndices[i]}`);
