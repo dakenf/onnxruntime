@@ -1,22 +1,16 @@
-import { ComputeContext } from '../types';
-import { TensorView } from '../../tensor';
-import { createAttributeWithCacheKey } from '../attribute-with-cache-key';
-import { createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata } from './transpose';
-import {
-  applyAttention,
-  AttentionAttrs,
-  AttentionMaskType,
-  AttentionParameters,
-  AttentionQkvFormat
-} from './attentiion';
+import {ComputeContext} from '../types';
+import {TensorView} from '../../tensor';
+import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
+import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
+import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat} from './attentiion';
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
   const query = inputs[0];
   const key = inputs[1];
   const value = inputs[2];
-  // const bias = inputs[3];
+  const bias = inputs[3];
   const keyPaddingMask = inputs[4];
-  const extraAddQk = inputs[5];
+  const relativePositionBias = inputs[5];
   const pastKey = inputs[6];
   const pastValue = inputs[7];
 
@@ -34,22 +28,75 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
 
   let pastSequenceLength = 0;
   let maxSequenceLength = 0;
+  const headSize = Math.floor(hiddenSize / attributes.numHeads);
   if (pastKey && pastValue) {
     if (pastKey.dims.length !== 4) {
-      throw new Error('past_key is expected to have 4 dimensions');
+      throw new Error('Input \'past_key\' is expected to have 4 dimensions');
     }
-
+    if (pastValue.dims.length !== 4) {
+      throw new Error('Input \'past_value\' is expected to have 4 dimensions')
+    }
     pastSequenceLength = pastKey.dims[2];
     maxSequenceLength = pastKey.dims[2];
+  } else if (pastKey || pastValue) {
+    throw new Error('Input \'past_key\' and \'past_value\' shall be both present or both absent')
   }
 
   let qkvFormat = AttentionQkvFormat.Q_K_V_BSNH;
   if (key) {
+    if (query.dims.length !== 3) {
+      throw new Error('Input \'query\' is expected to have 3 dimensions when key is given');
+    }
+    if (key.dims.length < 3  || key.dims.length > 5) {
+      throw new Error('Input \'key\' is expected to have 3, 4, or 5 dimensions');
+    }
+    if (query.dims[0] != key.dims[0]) {
+      throw new Error('Input \'query\' and \'key\' shall have same dim 0 (batch size)');
+    }
+
     if (key.dims.length === 3) {
+      if (key.dims[2] !== query.dims[2]) {
+        throw new Error('Input \'query\' and \'key\' shall have same dim 2 (hidden_size)');
+      }
       qkvFormat = AttentionQkvFormat.Q_K_V_BSNH;
       kvSequenceLength = key.dims[1];
     } else if (key.dims.length === 5) {
-      // not implemented
+      if (key.dims[2] !== attributes.numHeads || key.dims[3] !== 2 || key.dims[4] !== headSize) {
+        throw new Error('Expect \'key\' shape (batch_size, kv_sequence_length, num_heads, 2, head_size) for packed kv');
+      }
+      if (value) {
+        throw new Error('Expect \'value\' be none when \'key\' has packed kv format.');
+      }
+      qkvFormat = AttentionQkvFormat.Q_KV_BSNH_BSN2H;
+      kvSequenceLength = key.dims[1];
+    } else {  // key_dims.size() == 4 (cross-attention with past_key)
+      if (key.dims[1] !== attributes.numHeads || key.dims[3] !== headSize) {
+        throw new Error('Expect \'key\' shape (batch_size, num_heads, kv_sequence_length, head_size) for past_key');
+      }
+
+      qkvFormat = AttentionQkvFormat.UNKNOWN;
+      kvSequenceLength = key.dims[2];
+    }
+  } else { // packed QKV
+    if (query.dims.length !== 3 && query.dims.length !== 5) {
+      throw new Error('Input \'query\' is expected to have 3 or 5 dimensions when key is empty');
+    }
+    if (query.dims.length === 5 && (query.dims[2] !== attributes.numHeads || query.dims[3] !== 3)) {
+      throw new Error('Expect \'query\' shape (batch_size, kv_sequence_length, num_heads, 3, head_size) for packed kv');
+    }
+
+    qkvFormat = AttentionQkvFormat.QKV_BSN3H;
+  }
+
+  if (bias) {
+    if (bias.dims.length !== 1) {
+      throw new Error('Input \'bias\' is expected to have 1 dimension');
+    }
+
+    if (value) {
+      if (query.dims.length === 5 && query.dims[3] == 2) {
+        throw new Error('bias is not allowed for packed kv.');
+      }
     }
   }
 
@@ -69,14 +116,29 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     if (maskType === AttentionMaskType.MASK_UNKNOWN) {
       throw new Error('Input \'key_padding_mask\' shape shall be (batch_size) or (batch_size, kv_sequence_length)');
     }
+    throw new Error('Mask not supported');
   }
 
   let passPastInKv = false;
   let vHiddenSize = hiddenSize;
   if (value) {
+    if (value.dims.length !== 3 && value.dims.length !== 4) {
+      throw new Error('Input \'value\' is expected to have 3 or 4 dimensions')
+    }
+
+    if (query.dims[0] !== value.dims[0]) {
+      throw new Error('Input \'query\' and \'value\' shall have same dim 0 (batch_size)')
+    }
+
     if (value.dims.length === 3) {
+      if (kvSequenceLength !== value.dims[1]) {
+        throw new Error('Input \'key\' and \'value\' shall have the same dim 1 (kv_sequence_length)')
+      }
       vHiddenSize = value.dims[2];
     } else {
+      if (kvSequenceLength !== value.dims[2]) {
+        throw new Error('Input \'past_key\' and \'past_value\' shall have the same dim 2 (kv_sequence_length)')
+      }
       vHiddenSize = value.dims[1] * value.dims[3];
       passPastInKv = true;
     }
@@ -84,10 +146,26 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
 
   let totalSequenceLength = pastSequenceLength + kvSequenceLength;
   let broadcastResPosBias = false;
-  if (extraAddQk) {
-    if (extraAddQk.dims[0] === 1) {
-      broadcastResPosBias = true;
-    }
+  // if (extraAddQk) {
+  //   if (extraAddQk.dims[0] === 1) {
+  //     broadcastResPosBias = true;
+  //   }
+  // }
+
+  if (bias) {
+    throw new Error('bias is not supported');
+  }
+  if (keyPaddingMask) {
+    throw new Error('Key padding mask is not supported');
+  }
+  if (relativePositionBias) {
+    throw new Error('extraAddQk is not supported')
+  }
+  if (pastKey) {
+    throw new Error('pastKey is not supported')
+  }
+  if (pastValue) {
+    throw new Error('pastValue is not supported')
   }
 
   return {
@@ -100,7 +178,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     inputHiddenSize: 0,
     hiddenSize,
     vHiddenSize,
-    headSize: Math.floor(hiddenSize / attributes.numHeads),
+    headSize,
     vHeadSize: Math.floor(vHiddenSize / attributes.numHeads),
     numHeads: attributes.numHeads,
     isUnidirectional: false,
@@ -137,9 +215,9 @@ const maybeTransposeToBNSHAndAddBias = (context: ComputeContext, batchSize: numb
         {inputs: [reshapedInput], outputs: [-1]})[0];
   } else {
     if (sequenceLength === 1) {
-      throw new Error('implement AddBiasReshape');
+      throw new Error('AddBiasReshape is not implemented. Please export your model with packed QKV or KV');
     } else {
-      throw new Error('implement AddBiasTranspose');
+      throw new Error('AddBiasTranspose is not implemented. Please export your model with packed QKV or KV');
     }
   }
 };
@@ -168,17 +246,6 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   const params = validateInputs(context.inputs, attributes);
   if (context.inputs[0].dims.length === 5 || context.inputs[1]?.dims.length === 5) {
     const [Q, K, V] = unpackQKV(context.inputs[0], context.inputs[1]);
-    return applyAttention(context, Q, K, V, context.inputs[4], undefined,  context.inputs[6],  context.inputs[7],
-        context.inputs[5], params, attributes);
-  }
-
-  if (context.inputs[1].dims.length === 5) {
-    // packed KV
-    const dims = context.inputs[1].dims;
-    const Q = context.inputs[0];
-    const K = context.inputs[1];
-    const V = {...context.inputs[1]};
-    V.offset = dims[0] * dims[1] * dims[2] * dims[4];
     return applyAttention(context, Q, K, V, context.inputs[4], undefined,  context.inputs[6],  context.inputs[7],
         context.inputs[5], params, attributes);
   }

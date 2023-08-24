@@ -159,8 +159,16 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
 
   let maskType = AttentionMaskType.MASK_NONE;
   if (maskIndex) {
-    maskType = AttentionMaskType.MASK_UNKNOWN;
+    // maskType = AttentionMaskType.MASK_UNKNOWN;
     // TODO: handle mask
+    throw new Error('Mask not supported');
+  }
+
+  if (past) {
+    throw new Error('past is not supported');
+  }
+  if (relativePositionBias) {
+    throw new Error('relativePositionBias is not supported');
   }
 
   return {
@@ -336,7 +344,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
     cacheHint: '0',
   };
 
-  const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
+  const outputShape = [params.batchSize, params.sequenceLength, params.numHeads, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
   // console.log('shape', outputShape);
   const dataType = 'f32';
@@ -420,9 +428,6 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const M = parameters.sequenceLength;
   const K = parameters.inputHiddenSize;
 
-  // workgroup.x = Q/K/V index (0-2)
-  // workgroup.y = batch * numHeads
-  // workgroup.z = gemm M*N
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${M}u;
   const K: u32 = ${K}u;

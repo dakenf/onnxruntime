@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType, tensorTypeToWsglType} from '../../../wasm-common';
+import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
-import {ShaderHelper} from './common';
+import {ShaderHelper, tensorTypeToWsglStorageType} from './common';
 import {erfImpl} from './unary-op';
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
@@ -38,7 +38,7 @@ const createBiasSplitGeluProgramInfo =
 
         const gridSize = outputShape[0] * outputShape[1];
         const halfHiddenSize = outputShape[2];
-        const dataType = tensorTypeToWsglType(inputs[0].dataType);
+        const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
         const blockSize = halfHiddenSize / 256;
         const outputSize = gridSize;
 
