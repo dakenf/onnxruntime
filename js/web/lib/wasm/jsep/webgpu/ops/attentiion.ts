@@ -299,10 +299,12 @@ const computeAttentionProbs =
     let outputOffset = idxWoGemmSize * ${parameters.sequenceLength * parameters.totalSequenceLength};
     let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize;
     let inputOffset = ${parameters.sequenceLength * parameters.headSize} * idxWoGemmSize;
+    let batchIndex = idxWoGemmSize / numHeads;
 
-    if (global_idx >= ${unitsOfWork}) {
+    if (global_idx >= ${unitsOfWork} || batchIndex > batchSize) {
         return;
     }
+
     let gemmOffset = global_idx % gemmSize;
     let m = gemmOffset / N;
     let n = gemmOffset % N;
@@ -348,10 +350,10 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   const attentionScoreMatMulProgramData = {
     name: 'computeVxAttentionScore',
     inputTypes: [GpuDataType.default, GpuDataType.default],
-    cacheHint: '0',
+    cacheHint: JSON.stringify(params),
   };
 
-  const outputShape = [params.batchSize, params.sequenceLength, params.numHeads, params.vHeadSize];
+  const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
   // console.log('shape', outputShape);
   const dataType = 'f32';
@@ -460,6 +462,10 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     let batchIndex = idxWoGemmSize / numHeads / 3;
     let headIndex = (idxWoGemmSize / 3) % numHeads;
 
+    if (batchIndex >= batchSize) {
+        return;
+    }
+
     let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
 
     let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * (headSizes[qkvIndex]);
@@ -509,12 +515,8 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
 
 export const attention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateAttentionInputs(context.inputs, attributes);
-  console.log(params);
 
   const [q, k, v] = prepare(context, params, attributes);
-  // void context.debugBuffer(q.data);
-  // void context.debugBuffer(k.data);
-  // void context.debugBuffer(v.data);
 
   return applyAttention(
       context, q, k, v, context.inputs[4], undefined, undefined, undefined, context.inputs[5], params, attributes);
