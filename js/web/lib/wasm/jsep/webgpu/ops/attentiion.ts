@@ -255,7 +255,7 @@ const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, N: nu
 };
 
 const computeAttentionProbs =
-    (context: ComputeContext, Q: TensorView, Ki: TensorView, bias: TensorView|undefined,
+    (context: ComputeContext, q: TensorView, key: TensorView, bias: TensorView|undefined,
      parameters: AttentionParameters, attributes: AttentionAttrs) => {
       const probsShape = [
         parameters.batchSize, parameters.numHeads, parameters.sequenceLength,
@@ -263,9 +263,16 @@ const computeAttentionProbs =
       ];
       // TODO: handle mask
 
-      // console.log('computeAttentionProbs', parameters, attributes);
+      let kInput = 'key';
+      let packedKOffset = '';
+      if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) { // packed QKV in Q
+        kInput = 'q';
+        packedKOffset = `+ ${parameters.hiddenSize} + idxWoGemmSize * 2 * ${parameters.hiddenSize}`;
+      } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
+        packedKOffset = `+ idxWoGemmSize * ${parameters.vHiddenSize}`;
+      }
 
-      let alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
+      const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
       const gemmSize = parameters.sequenceLength * parameters.totalSequenceLength;
       const unitsOfWork = ShapeUtil.size(probsShape);
       const dataType = 'f32';
@@ -274,12 +281,21 @@ const computeAttentionProbs =
       const N = parameters.totalSequenceLength;
       const K = parameters.headSize;
 
+      const inputs = [q];
       const inputDeclarations = [
-        `@group(0) @binding(0) var<storage, read> a: array<${dataType}>;`,
-        `@group(0) @binding(1) var<storage, read> b: array<${dataType}>;`,
+        `@group(0) @binding(0) var<storage, read> q: array<${dataType}>;`,
       ];
+      if (key) {
+        inputDeclarations.push(
+          `@group(0) @binding(${inputDeclarations.length}) var<storage, read> key: array<${dataType}>;`
+        );
+        inputs.push(key);
+      }
       if (bias) {
-        inputDeclarations.push(`@group(0) @binding(2) var<storage, read> bias: array<${dataType}>;`);
+        inputDeclarations.push(
+          `@group(0) @binding(${inputDeclarations.length}) var<storage, read> bias: array<${dataType}>;`
+        );
+        inputs.push(bias);
       }
       const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${M}u;
@@ -297,7 +313,7 @@ const computeAttentionProbs =
   ${shaderHelper.mainStart()}
     let idxWoGemmSize = global_idx / gemmSize;
     let outputOffset = idxWoGemmSize * ${parameters.sequenceLength * parameters.totalSequenceLength};
-    let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize;
+    let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize ${packedKOffset};
     let inputOffset = ${parameters.sequenceLength * parameters.headSize} * idxWoGemmSize;
     let batchIndex = idxWoGemmSize / numHeads;
 
@@ -312,7 +328,7 @@ const computeAttentionProbs =
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans a + trans b
-      value += a[m * K + k + inputOffset] * b[n * K + k + kOffset];
+      value += q[m * K + k + inputOffset] * ${kInput}[n * K + k + kOffset];
     }
 
     value *= alpha;
@@ -321,19 +337,14 @@ const computeAttentionProbs =
     output[global_idx] = value;
   }`;
 
-      const inputTypes = [GpuDataType.default, GpuDataType.default];
-      const inputs = [Q, Ki];
-      if (bias) {
-        inputTypes.push(GpuDataType.default);
-        inputs.push(bias);
-      }
+      const inputTypes = inputDeclarations.map(_ => GpuDataType.default);
 
       const probs = context.compute(
           {
             name: 'computeAttentionProbs',
             cacheHint: '0',
             inputTypes,
-            outputs: [{dims: probsShape, dataType: Q.dataType, gpuDataType: GpuDataType.default}],
+            outputs: [{dims: probsShape, dataType: q.dataType, gpuDataType: GpuDataType.default}],
             getShaderSource,
             dispatchGroup: () => ({x: Math.ceil(unitsOfWork / 64 /* workgroup size */)})
           },
@@ -355,15 +366,22 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
 
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
-  // console.log('shape', outputShape);
+
+  let packedVOffset = '';
+  if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
+    packedVOffset = `+ ${params.hiddenSize} + stack * 2 * ${params.hiddenSize}`;
+  } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
+    packedVOffset = `stack * ${params.vHiddenSize}`;
+  }
+
   const dataType = 'f32';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
   const K: u32 = ${params.totalSequenceLength}u;
 
-  @group(0) @binding(0) var<storage, read> a : array<${dataType}>;
-  @group(0) @binding(1) var<storage, read> b : array<${dataType}>;
+  @group(0) @binding(0) var<storage, read> probs : array<${dataType}>;
+  @group(0) @binding(1) var<storage, read> v : array<${dataType}>;
   @group(0) @binding(2) var<storage, read_write> output : array<${dataType}>;
 
   ${shaderHelper.mainStart()}
@@ -377,7 +395,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
 
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<K; k++) {
-      value += a[offsetA + k] * b[offsetB + k * N];
+      value += probs[offsetA + k] * v[offsetB + k * N ${packedVOffset}];
     }
     output[global_idx] = value;
   }`;
@@ -390,10 +408,10 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
 };
 
 export const applyAttention =
-    (context: ComputeContext, Q: TensorView, K: TensorView, V: TensorView, maskIndex: TensorView|undefined,
+    (context: ComputeContext, q: TensorView, k: TensorView, v: TensorView, maskIndex: TensorView|undefined,
      past: TensorView|undefined, pastKey: TensorView|undefined, pastValue: TensorView|undefined,
      relativePositionBias: TensorView|undefined, parameters: AttentionParameters, attributes: AttentionAttrs) => {
-      const probs = computeAttentionProbs(context, Q, K, relativePositionBias, parameters, attributes);
+      const probs = computeAttentionProbs(context, q, k, relativePositionBias, parameters, attributes);
 
       const attentionScoreMatMulProgramData = {
         name: 'Transpose',
@@ -407,7 +425,7 @@ export const applyAttention =
             cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
             get: () => computeVxAttentionScore(parameters)
           },
-          {inputs: [probs, V], outputs: [-1]})[0];
+          {inputs: [probs, v || q], outputs: [-1]})[0];
 
       context.compute(
           {

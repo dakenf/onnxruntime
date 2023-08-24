@@ -15,6 +15,26 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   const pastKey = inputs[6];
   const pastValue = inputs[7];
 
+  //     key_padding_mask (K/V)     : (B) or (2*B + 1) or (B, L) or None
+  //     relative_position_bias     : (B, 1, S, L)
+  //     past_key                   : (B, N, S*, H)
+  //     past_value                 : (B, N, S*, H)
+  // When no packing for q/k/v:
+  //     query            (Q)       : (B, S, D)
+  //     key              (K)       : (B, L, D) or (B, N, S*, H)
+  //     value            (V)       : (B, L, D_v) or (B, N, S*, H)
+  //     bias             (Q/K/V)   : (D + D + D_v)
+  // When packed kv is used:
+  //     query            (Q)       : (B, S, D)
+  //     key              (K)       : (B, L, N, 2, H)
+  //     value            (V)       : None
+  //     bias             (Q/K/V)   : None
+  // When packed qkv is used:
+  //     query            (Q)       : (B, L, N, 3, H) or (B, S, 3*D)
+  //     key              (K)       : None
+  //     value            (V)       : None
+  //     bias             (Q/K/V)   : None or (D + D + D_v)
+
   if (query.dims.length !== 3 && query.dims.length !== 5) {
     throw new Error('Input query is expected to have 3 or 5 dimensions');
   }
@@ -223,33 +243,12 @@ const maybeTransposeToBNSHAndAddBias =
       }
     };
 
-const unpackQKV = (input1: TensorView, input2?: TensorView) => {
-  const inputToSplit = input2 || input1;
-  const dims = inputToSplit.dims;
-  const offsetBase = dims[0] * dims[1] * dims[2] * dims[4] * 4;
-  const Q = input1 || input2;
-
-  if (input2) {
-    const K = input2;
-    const V = {...input2};
-    V.offset = offsetBase;
-    return [Q, K, V];
-  }
-  const K = {...inputToSplit};
-  K.offset = offsetBase;
-  const V = {...inputToSplit};
-  V.offset = offsetBase * 2;
-
-  return [Q, K, V];
-};
-
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
   if (context.inputs[0].dims.length === 5 || context.inputs[1]?.dims.length === 5) {
-    const [Q, K, V] = unpackQKV(context.inputs[0], context.inputs[1]);
     return applyAttention(
-        context, Q, K, V, context.inputs[4], undefined, context.inputs[6], context.inputs[7], context.inputs[5], params,
-        attributes);
+      context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
+      context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
   }
 
   const kvBNSH = context.inputs[1] && context.inputs[2] && context.inputs[1].dims.length === 4 &&
