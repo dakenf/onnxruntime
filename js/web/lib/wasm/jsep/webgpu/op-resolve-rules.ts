@@ -2,6 +2,9 @@
 // Licensed under the MIT License.
 
 import {argMax, argMin, parseArgMinMaxAttributes} from './ops/argminmax';
+import {attention, parseAttentionAttributes} from './ops/attentiion';
+import {biasAdd} from './ops/bias-add';
+import {biasSplitGelu} from './ops/bias-split-gelu';
 import * as binaryOps from './ops/binary-op';
 import {concat, parseConcatAttributes} from './ops/concat';
 import {conv, parseConvAttributes} from './ops/conv';
@@ -12,6 +15,7 @@ import {gemm, parseGemmAttributes} from './ops/gemm';
 import {instanceNorm, parseInstanceNormAttributes} from './ops/instance-norm';
 import {layerNorm, parseLayerNormAttributes} from './ops/layer-norm';
 import {matMul} from './ops/matmul';
+import {multiHeadAttention, parseMultiHeadAttentionAttributes} from './ops/multi-head-attentiion';
 import * as pool from './ops/pool';
 import {parseReduceAttributes, reduceL1, reduceL2, reduceLogSum, reduceLogSumExp, reduceMax, reduceMean, reduceMin, reduceProd, reduceSum, reduceSumSquare} from './ops/reduce';
 import {parseResizeAttributes, resize} from './ops/resize';
@@ -23,10 +27,6 @@ import {tile} from './ops/tile';
 import {parseTransposeAttributes, transpose} from './ops/transpose';
 import * as unaryOps from './ops/unary-op';
 import {ComputeContext} from './types';
-import {biasSplitGelu} from './ops/bias-split-gelu';
-import {biasAdd} from './ops/bias-add';
-import { multiHeadAttention, parseMultiHeadAttentionAttributes } from './ops/multi-head-attentiion';
-import { attention, parseAttentionAttributes } from './ops/attentiion';
 
 export type RunFunction = (context: ComputeContext, attribute?: unknown) => void;
 export type ParseAttributeFunction = (attributeRaw: unknown) => unknown;

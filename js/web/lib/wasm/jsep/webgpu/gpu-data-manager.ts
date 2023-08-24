@@ -174,16 +174,16 @@ class GpuDataManagerImpl implements GpuDataManager {
       // }
       //
       // if (!gpuBuffer) {
-        if (!buffers) {
-          buffers = [];
-          this.freeBuffers.set(bufferSize, buffers);
-        }
-        if (buffers.length > 0) {
-          gpuBuffer = buffers.pop() as GPUBuffer;
-        } else {
-          // create gpu buffer
-          gpuBuffer = this.backend.device.createBuffer({size: bufferSize, usage});
-        }
+      if (!buffers) {
+        buffers = [];
+        this.freeBuffers.set(bufferSize, buffers);
+      }
+      if (buffers.length > 0) {
+        gpuBuffer = buffers.pop() as GPUBuffer;
+      } else {
+        // create gpu buffer
+        gpuBuffer = this.backend.device.createBuffer({size: bufferSize, usage});
+      }
       // }
     } else {
       // create gpu buffer

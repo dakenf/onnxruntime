@@ -12,19 +12,14 @@ declare namespace JSEP {
   type RunFunction = (kernel: number, contextDataOffset: number) => number;
 }
 export type FSNode = {
-  contents: Uint8Array;
-  usedBytes: number;
+  contents: Uint8Array; usedBytes: number;
 }
 
 export interface OrtWasmModule extends EmscriptenModule {
   HEAP64: BigInt64Array;
   HEAPU64: BigUint64Array;
   PTR_SIZE: number;
-  FS: {
-    create(path: string): FSNode;
-    chdir(path: string): void;
-    unlink(path: string|FSNode): void;
-  };
+  FS: {create(path: string): FSNode; chdir(path: string): void; unlink(path: string|FSNode): void;};
 
   // #region emscripten functions
   stackSave(): number;

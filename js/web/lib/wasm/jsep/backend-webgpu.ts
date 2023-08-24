@@ -255,8 +255,9 @@ export class WebGpuBackend {
       const isPersistent = validatedOutputIndices[i] === -2;
       const tensorView = (isTemporary || isPersistent) ?
           createIntermediateOutput(programInfo.outputs[i].dataType, programInfo.outputs[i].dims) :
-          createKernelOutput(programInfo.outputs[i].outputIndex || validatedOutputIndices[i],
-              programInfo.outputs[i].dataType, programInfo.outputs[i].dims);
+          createKernelOutput(
+              programInfo.outputs[i].outputIndex || validatedOutputIndices[i], programInfo.outputs[i].dataType,
+              programInfo.outputs[i].dims);
       const gpuData = this.gpuDataManager.get(tensorView.data);
       if (!gpuData) {
         throw new Error(`no GPU data for output: ${tensorView.data}`);

@@ -46,21 +46,22 @@ const permFunctionBody = (perm: number[], rank: number, input: IndicesHelper, ou
   return reverseFunc.join('\n');
 };
 
-export const createTransposeProgramInfo = (inputTensor: TensorView, permAttr: number[], reshapeOutput?: number[]): ProgramInfo => {
-  const dataType = inputTensor.dataType;
-  const inputShape = inputTensor.dims;
-  const perm = getAdjustedPerm(inputShape, permAttr);
-  const outputShape = getOutputShape(inputShape, perm);
-  const rank = inputShape.length;
-  const outputSize = ShapeUtil.size(outputShape);
-  // A dims=[${inputs[0].dims.toString()}]
-  // out Dims=[${unpackedOutputShape.toString()}]
-  // based on perm=[${perm.toString()}]
+export const createTransposeProgramInfo =
+    (inputTensor: TensorView, permAttr: number[], reshapeOutput?: number[]): ProgramInfo => {
+      const dataType = inputTensor.dataType;
+      const inputShape = inputTensor.dims;
+      const perm = getAdjustedPerm(inputShape, permAttr);
+      const outputShape = getOutputShape(inputShape, perm);
+      const rank = inputShape.length;
+      const outputSize = ShapeUtil.size(outputShape);
+      // A dims=[${inputs[0].dims.toString()}]
+      // out Dims=[${unpackedOutputShape.toString()}]
+      // based on perm=[${perm.toString()}]
 
-  const output = outputVariable('output', dataType, outputShape);
-  const input = inputVariable('a', dataType, inputShape);
+      const output = outputVariable('output', dataType, outputShape);
+      const input = inputVariable('a', dataType, inputShape);
 
-  const getShaderSource = (shaderHelper: ShaderHelper) => `
+      const getShaderSource = (shaderHelper: ShaderHelper) => `
   ${shaderHelper.declareVariables(input, output)}
 
   ${permFunctionBody(perm, rank, input, output)}
@@ -73,13 +74,14 @@ export const createTransposeProgramInfo = (inputTensor: TensorView, permAttr: nu
 
     ${output.setByOffset('global_idx', input.getByIndices('aIndices'))}
   }`;
-  return {
-    ...transposeProgramMetadata,
-    outputs: [{dims: reshapeOutput || outputShape, dataType: inputTensor.dataType, gpuDataType: GpuDataType.default}],
-    getShaderSource,
-    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-  };
-};
+      return {
+        ...transposeProgramMetadata,
+        outputs:
+            [{dims: reshapeOutput || outputShape, dataType: inputTensor.dataType, gpuDataType: GpuDataType.default}],
+        getShaderSource,
+        dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+      };
+    };
 
 export const transpose = (context: ComputeContext, attributes: TransposeAttributes): void => {
   validateInputs(context.inputs);

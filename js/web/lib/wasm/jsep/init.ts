@@ -69,7 +69,7 @@ class ComputeContextImpl implements ComputeContext {
     const heap = module.PTR_SIZE === 4 ? module.HEAPU32 : module.HEAPU64;
 
     // extract context data
-    let dataIndex = module.PTR_SIZE === 8 ? (contextDataOffset / 2**3) : (contextDataOffset >> 2);
+    let dataIndex = module.PTR_SIZE === 8 ? (contextDataOffset / 2 ** 3) : (contextDataOffset >> 2);
     this.opKernelContext = Number(heap[dataIndex++]);
     const inputCount = Number(heap[dataIndex++]);
     this.outputCount = Number(heap[dataIndex++]);
@@ -117,7 +117,7 @@ class ComputeContextImpl implements ComputeContext {
       const data = this.module.stackAlloc((1 + dims.length) * ptrSize /* sizeof(size_t) */);
       this.module.setValue(data, dims.length, '*');
       for (let i = 0; i < dims.length; i++) {
-        this.module.setValue(data + ptrSize * (i+1), dims[i], '*');
+        this.module.setValue(data + ptrSize * (i + 1), dims[i], '*');
       }
       return this.module._JsepOutput(this.opKernelContext, index, data);
     } finally {
@@ -165,7 +165,8 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
                   'verbose',
                   () => `[WebGPU] jsepCopyGpuToCpu: gpuDataId=${gpuDataId}, dataOffset=${dataOffset}, size=${size}`);
 
-              await backend.download(gpuDataId, () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
+              await backend.download(
+                  gpuDataId, () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
             },
 
         // jsepCreateKernel

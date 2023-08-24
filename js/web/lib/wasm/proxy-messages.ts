@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 import {Env, InferenceSession, Tensor} from 'onnxruntime-common';
-import { FSNode } from './binding/ort-wasm';
+
+import {FSNode} from './binding/ort-wasm';
 
 /**
  *  tuple elements are: ORT element type; dims; tensor data

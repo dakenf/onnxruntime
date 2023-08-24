@@ -7,7 +7,7 @@ import {promisify} from 'util';
 
 import {SerializableModeldata} from './proxy-messages';
 import {createSessionAllocate, createSessionFinalize, endProfiling, initializeRuntime, releaseSession, run} from './proxy-wrapper';
-import { streamResponseToBuffer } from './wasm-common';
+import {streamResponseToBuffer} from './wasm-common';
 
 let runtimeInitialized: boolean;
 
@@ -40,16 +40,16 @@ export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
         index: 'u64',
         shared: true,
       });
-      promises.push(streamResponseToBuffer(weightsResponse, weightsMemory.buffer, 0)
-        .then(() => weightsMemory.buffer));
+      promises.push(streamResponseToBuffer(weightsResponse, weightsMemory.buffer, 0).then(() => weightsMemory.buffer));
     }
 
     // fetch model and weights in parallel
     return Promise.all(promises);
   }
 
-  async loadModel(urisOrBuffers: string|[string, string]|Uint8Array|[Uint8Array, ArrayBuffer],
-    options?: InferenceSession.SessionOptions): Promise<void> {
+  async loadModel(
+      urisOrBuffers: string|[string, string]|Uint8Array|[Uint8Array, ArrayBuffer],
+      options?: InferenceSession.SessionOptions): Promise<void> {
     if (!runtimeInitialized) {
       await initializeRuntime(env);
       runtimeInitialized = true;
@@ -67,7 +67,7 @@ export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
         } else {
           [modelBuffer, weightsBuffer] = await this.fetchModelAndWeights(urisOrBuffers[0], urisOrBuffers[1] as string);
         }
-      } else { // [UInt8Array, ArrayBuffer]
+      } else {  // [UInt8Array, ArrayBuffer]
         [modelBuffer, weightsBuffer] = urisOrBuffers as [Uint8Array, ArrayBuffer];
       }
     } else {
@@ -122,9 +122,8 @@ export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
 
     const result: SessionHandler.ReturnType = {};
     for (let i = 0; i < outputs.length; i++) {
-      result[this.outputNames[outputIndices[i]]] = new Tensor(
-          outputs[i][0], outputs[i][2], outputs[i][1].map(i => Number(i))
-      );
+      result[this.outputNames[outputIndices[i]]] =
+          new Tensor(outputs[i][0], outputs[i][2], outputs[i][1].map(i => Number(i)));
     }
     return result;
   }

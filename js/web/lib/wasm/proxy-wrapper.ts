@@ -147,7 +147,8 @@ export const initializeRuntime = async(env: Env): Promise<void> => {
   }
 };
 
-export const createSessionAllocate = async(model: Uint8Array, weights?: ArrayBuffer): Promise<SerializableModeldata> => {
+export const createSessionAllocate =
+    async(model: Uint8Array, weights?: ArrayBuffer): Promise<SerializableModeldata> => {
   if (!BUILD_DEFS.DISABLE_WASM_PROXY && isProxy()) {
     ensureWorker();
     return new Promise<SerializableModeldata>((resolve, reject) => {

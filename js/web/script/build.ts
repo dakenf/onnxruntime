@@ -94,8 +94,8 @@ if (WASM) {
     const terser = spawnSync(
         'npx',
         [
-          'terser', WASM_BINDING_THREADED_JS_PATH, '--format','--mangle',
-          'reserved=[_scriptDir,startWorker]', '--module'
+          'terser', WASM_BINDING_THREADED_JS_PATH, '--format', '--mangle', 'reserved=[_scriptDir,startWorker]',
+          '--module'
         ],
         {shell: true, encoding: 'utf-8', cwd: ROOT_FOLDER});
     if (terser.status !== 0) {
@@ -119,8 +119,8 @@ if (WASM) {
     const terser = spawnSync(
         'npx',
         [
-          'terser', WASM_BINDING_SIMD_THREADED_JSEP_JS_PATH, 'passes=2', '--format',
-          '--mangle', 'reserved=[_scriptDir,startWorker]', '--module'
+          'terser', WASM_BINDING_SIMD_THREADED_JSEP_JS_PATH, 'passes=2', '--format', '--mangle',
+          'reserved=[_scriptDir,startWorker]', '--module'
         ],
         {shell: true, encoding: 'utf-8', cwd: ROOT_FOLDER});
     if (terser.status !== 0) {

@@ -3,18 +3,13 @@
 
 import {Env, InferenceSession, Tensor} from 'onnxruntime-common';
 
+import {FSNode} from './binding/ort-wasm';
 import {SerializableModeldata, SerializableSessionMetadata, SerializableTensor} from './proxy-messages';
 import {setRunOptions} from './run-options';
 import {setSessionOptions} from './session-options';
-import {
-  logLevelStringToEnum,
-  tensorDataTypeEnumToString,
-  tensorDataTypeStringToEnum,
-  tensorTypeToTypedArrayConstructor
-} from './wasm-common';
+import {logLevelStringToEnum, tensorDataTypeEnumToString, tensorDataTypeStringToEnum, tensorTypeToTypedArrayConstructor} from './wasm-common';
 import {getInstance} from './wasm-factory';
 import {allocWasmString, checkLastError} from './wasm-utils';
-import { FSNode } from './binding/ort-wasm';
 
 /**
  * get the input/output count of the session.
@@ -165,10 +160,10 @@ export const createSessionFinalize =
  * @returns the metadata of InferenceSession. 0-value handle for failure.
  */
 export const createSession =
-    async (model: Uint8Array, options?: InferenceSession.SessionOptions): Promise<SerializableSessionMetadata> => {
-      const modelData: SerializableModeldata = createSessionAllocate(model);
-      return createSessionFinalize(modelData, options);
-    };
+    async(model: Uint8Array, options?: InferenceSession.SessionOptions): Promise<SerializableSessionMetadata> => {
+  const modelData: SerializableModeldata = createSessionAllocate(model);
+  return createSessionFinalize(modelData, options);
+};
 
 export const releaseSession = (sessionId: number): void => {
   const wasm = getInstance();
@@ -299,9 +294,8 @@ export const run = async(
         let type: Tensor.Type|undefined, dataOffset = 0;
         try {
           errorCode = wasm._OrtGetTensorData(
-              tensor, tensorDataOffset, tensorDataOffset + ptrSize, tensorDataOffset + ptrSize*2,
-              tensorDataOffset + ptrSize*3
-          );
+              tensor, tensorDataOffset, tensorDataOffset + ptrSize, tensorDataOffset + ptrSize * 2,
+              tensorDataOffset + ptrSize * 3);
           if (errorCode !== 0) {
             checkLastError(`Can't access output tensor data on index ${i}.`);
           }

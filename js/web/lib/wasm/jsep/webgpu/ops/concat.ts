@@ -136,9 +136,9 @@ const createConcatProgramInfoLoader =
     (inputs: readonly TensorView[], attributes: ConcatAttributes): ProgramInfoLoader => {
       const metadata = createConcatProgramMetadata(inputs.length, attributes.cacheKey);
       return {
-          ...metadata,
-          cacheHint: metadata.cacheHint + inputs[0].dims.join(','),
-          get: () => createConcatProgramInfo(metadata, inputs, attributes.axis)
+        ...metadata,
+        cacheHint: metadata.cacheHint + inputs[0].dims.join(','),
+        get: () => createConcatProgramInfo(metadata, inputs, attributes.axis)
       };
     };
 
