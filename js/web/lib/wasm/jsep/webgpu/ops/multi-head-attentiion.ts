@@ -70,7 +70,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     if (key.dims.length < 3 || key.dims.length > 5) {
       throw new Error('Input \'key\' is expected to have 3, 4, or 5 dimensions');
     }
-    if (query.dims[0] != key.dims[0]) {
+    if (query.dims[0] !== key.dims[0]) {
       throw new Error('Input \'query\' and \'key\' shall have same dim 0 (batch size)');
     }
 
