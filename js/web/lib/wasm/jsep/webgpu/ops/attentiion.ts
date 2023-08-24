@@ -80,6 +80,10 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
     throw new Error('Input "input" must have 3 dimensions');
   }
 
+  const batchSize = input.dims[0];
+  const sequenceLength = input.dims[1];
+  const inputHiddenSize = input.dims[2];
+
   if (bias.dims.length !== 1) {
     throw new Error('Input "bias" is expected to have 1 dimensions');
   }
@@ -88,9 +92,6 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
     throw new Error('Input "weights" is expected to have 2 dimensions');
   }
 
-  const batchSize = input.dims[0];
-  const sequenceLength = input.dims[1];
-  const inputHiddenSize = input.dims[2];
   if (weights.dims[0] !== inputHiddenSize) {
     throw new Error('Input 1 dimension 0 should have same length as dimension 2 of input 0');
   }
@@ -421,7 +422,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   // TODO: handle mask
 
   // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
-  const gemmSize = parameters.sequenceLength * parameters.headSize;
+  const gemmSize = parameters.sequenceLength * parameters.hiddenSize;
   const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads * 3;
   const dataType = 'f32';
 
@@ -434,21 +435,22 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const numHeads: u32 = ${parameters.numHeads};
   const headSizes = array<u32, 3>(${parameters.headSize}, ${parameters.headSize}, ${parameters.vHeadSize});
   const batchSize: u32 = ${parameters.batchSize};
-  const gemmSize: u32 = ${gemmSize};
+  // const gemmSize: u32 = ${gemmSize};
   const ldb = ${parameters.hiddenSize + parameters.hiddenSize + parameters.vHiddenSize}u;
 
   @group(0) @binding(0) var<storage, read> input: array<${dataType}>;
   @group(0) @binding(1) var<storage, read> weight: array<${dataType}>;
   @group(0) @binding(2) var<storage, read> bias: array<${dataType}>;
-  @group(0) @binding(3) var<storage, read_write> outputQ: array<${dataType}, ${parameters.inputHiddenSize}>;
-  @group(0) @binding(4) var<storage, read_write> outputK: array<${dataType}, ${parameters.inputHiddenSize}>;
-  @group(0) @binding(5) var<storage, read_write> outputV: array<${dataType}, ${parameters.inputHiddenSize}>;
+  @group(0) @binding(3) var<storage, read_write> outputQ: array<${dataType}>;
+  @group(0) @binding(4) var<storage, read_write> outputK: array<${dataType}>;
+  @group(0) @binding(5) var<storage, read_write> outputV: array<${dataType}>;
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
     let qkvIndex = global_idx % 3;
-    let idxWoGemmSize = global_idx / gemmSize;
     let N: u32 = headSizes[qkvIndex];
+    let gemmSize = M * N;
+    let idxWoGemmSize = global_idx / gemmSize;
     let batchIndex = idxWoGemmSize / numHeads / 3;
     let headIndex = (idxWoGemmSize / 3) % numHeads;
 
@@ -459,7 +461,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
 
     let outputOffset = (batchIndex * numHeads + headIndex) * (${parameters.sequenceLength} * headSizes[qkvIndex]);
 
-    let gemmOffset = global_idx % gemmSize;
+    let gemmOffset = (global_idx / 3) % gemmSize;
     let m = gemmOffset / N;
     let n = gemmOffset % N;
 
