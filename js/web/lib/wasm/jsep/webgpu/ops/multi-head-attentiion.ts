@@ -217,6 +217,8 @@ export const parseMultiHeadAttentionAttributes = (attributes: AttentionAttrs): A
     createAttributeWithCacheKey({...attributes});
 
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
+const packedWeightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3, 4]});
+
 const maybeTransposeToBNSHAndAddBias =
     (context: ComputeContext, batchSize: number, numHeads: number, sequenceLength: number, headSize: number,
      input: TensorView, bias?: TensorView, biasOffset?: number) => {
@@ -245,9 +247,35 @@ const maybeTransposeToBNSHAndAddBias =
 
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
-  if (context.inputs[0].dims.length === 5 || context.inputs[1]?.dims.length === 5) {
+
+  // TODO: write attention implementation that does not need packed weight transpose
+  if (context.inputs[0].dims.length === 5) {
+    const Q = context.compute(
+        {
+          ...transposeProgramMetadata,
+          cacheHint: weightTransposeAttribute.cacheKey,
+          get: () => createTransposeProgramInfo(context.inputs[0], packedWeightTransposeAttribute.perm)
+        },
+        {inputs: [context.inputs[0]], outputs: [-1]})[0];
     return applyAttention(
-        context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
+        context, Q, context.inputs[1], context.inputs[2], context.inputs[4], undefined,
+        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
+  }
+
+  if (context.inputs[1]?.dims.length === 5) {
+    const Q = maybeTransposeToBNSHAndAddBias(
+        context, params.batchSize, params.numHeads, params.sequenceLength, params.headSize, context.inputs[0],
+        context.inputs[3], 0);
+
+    const K = context.compute(
+        {
+          ...transposeProgramMetadata,
+          cacheHint: weightTransposeAttribute.cacheKey,
+          get: () => createTransposeProgramInfo(context.inputs[1], packedWeightTransposeAttribute.perm)
+        },
+        {inputs: [context.inputs[0]], outputs: [-1]})[0];
+    return applyAttention(
+        context, Q, K, context.inputs[2], context.inputs[4], undefined,
         context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
   }
 

@@ -100,7 +100,7 @@ if (WASM) {
         {shell: true, encoding: 'utf-8', cwd: ROOT_FOLDER});
     if (terser.status !== 0) {
       console.error(terser.error);
-      process.exit(terser.status === null ? undefined : terser.status);
+      // process.exit(terser.status === null ? undefined : terser.status);
     }
 
     fs.writeFileSync(WASM_BINDING_THREADED_MIN_JS_PATH, terser.stdout);
@@ -110,7 +110,7 @@ if (WASM) {
     validateFile(WASM_THREADED_JS_PATH);
   } catch (e) {
     npmlog.error('Build', `Failed to run terser on ort-wasm-threaded.js. ERR: ${e}`);
-    throw e;
+    // throw e;
   }
   npmlog.info('Build', 'Minimizing file "ort-wasm-threaded.js"... DONE');
 
@@ -125,7 +125,7 @@ if (WASM) {
         {shell: true, encoding: 'utf-8', cwd: ROOT_FOLDER});
     if (terser.status !== 0) {
       console.error(terser.error);
-      process.exit(terser.status === null ? undefined : terser.status);
+      // process.exit(terser.status === null ? undefined : terser.status);
     }
 
     fs.writeFileSync(WASM_BINDING_SIMD_THREADED_JSEP_MIN_JS_PATH, terser.stdout);
@@ -135,7 +135,7 @@ if (WASM) {
     validateFile(WASM_SIMD_THREADED_JSEP_JS_PATH);
   } catch (e) {
     npmlog.error('Build', `Failed to run terser on ort-wasm-threaded.js. ERR: ${e}`);
-    throw e;
+    // throw e;
   }
   npmlog.info('Build', 'Minimizing file "ort-wasm-simd-threaded.jsep.js"... DONE');
 

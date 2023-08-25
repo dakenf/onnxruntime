@@ -92,19 +92,19 @@ fn mapIndices(outIndex: u32, k: u32, outShape: array<u32, ${maxDims}>, shapeA: a
 
 export const getSimpleBroadcastAForMatMul = (aShape: readonly number[], bShape: readonly number[]): string|null => {
   const rankA = aShape.length;
-  const rankB = bShape.length;
+  // const rankB = bShape.length;
 
   if (rankA <= 2) {
     return 'm * K';
   }
 
-  if (rankA === 3 && rankB === 4) {
-    return `m * K + stack % ${aShape[0]} * (M * K);`;
-  }
-
-  if (rankA === 4 && rankB === 5) {
-    return `m * K + (stack) % ${aShape[0] * aShape[1]} * (M * K);`;
-  }
+  // if (rankA === 3 && rankB === 4) {
+  //   return `m * K + stack % ${aShape[0]} * (M * K);`;
+  // }
+  //
+  // if (rankA === 4 && rankB === 5) {
+  //   return `m * K + (stack) % ${aShape[0] * aShape[1]} * (M * K);`;
+  // }
 
   return null;
 };

@@ -37,7 +37,7 @@ export interface AttentionParameters {
   batchSize: number;
   sequenceLength: number;
   pastSequenceLength: number;
-  kvSequenceLength: number
+  kvSequenceLength: number;
   totalSequenceLength: number;
   maxSequenceLength: number;
   inputHiddenSize: number;
@@ -264,12 +264,14 @@ const computeAttentionProbs =
       // TODO: handle mask
 
       let kInput = 'key';
-      let packedKOffset = '';
+      let packedQOffset = `${parameters.sequenceLength * parameters.headSize} * idxWoGemmSize`;
+      let packedKOffset = `${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize `;
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {  // packed QKV in Q
         kInput = 'q';
-        packedKOffset = `+ ${parameters.hiddenSize} + idxWoGemmSize * 2 * ${parameters.hiddenSize}`;
+        packedKOffset = `${parameters.hiddenSize} + idxWoGemmSize * ${parameters.hiddenSize} * 3`;
+        packedQOffset = `batchIndex * ${parameters.hiddenSize} * 3 + headIndex * ${parameters.headSize}`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-        packedKOffset = `+ idxWoGemmSize * ${parameters.vHiddenSize}`;
+        packedKOffset = `idxWoGemmSize * ${parameters.vHiddenSize}`;
       }
 
       const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
@@ -311,9 +313,10 @@ const computeAttentionProbs =
   ${shaderHelper.mainStart()}
     let idxWoGemmSize = global_idx / gemmSize;
     let outputOffset = idxWoGemmSize * ${parameters.sequenceLength * parameters.totalSequenceLength};
-    let kOffset = ${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize ${packedKOffset};
-    let inputOffset = ${parameters.sequenceLength * parameters.headSize} * idxWoGemmSize;
     let batchIndex = idxWoGemmSize / numHeads;
+    let headIndex = idxWoGemmSize % numHeads;
+    let kOffset = ${packedKOffset};
+    let inputOffset = ${packedQOffset};
 
     if (global_idx >= ${unitsOfWork} || batchIndex > batchSize) {
         return;
@@ -367,9 +370,9 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
 
   let packedVOffset = '';
   if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
-    packedVOffset = `+ ${params.hiddenSize} + stack * 2 * ${params.hiddenSize}`;
+    packedVOffset = ` + ${params.hiddenSize * 2} + stack * ${params.hiddenSize} * 2`;
   } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-    packedVOffset = `stack * ${params.vHiddenSize}`;
+    packedVOffset = ` + stack * ${params.vHiddenSize}`;
   }
 
   const dataType = 'f32';
@@ -412,7 +415,7 @@ export const applyAttention =
       const probs = computeAttentionProbs(context, q, k, relativePositionBias, parameters, attributes);
 
       const attentionScoreMatMulProgramData = {
-        name: 'Transpose',
+        name: 'AttentionScore',
         inputTypes: [GpuDataType.default, GpuDataType.default],
         cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
       };
