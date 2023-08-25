@@ -8,11 +8,15 @@
 #include "run_options_helper.h"
 #include "session_options_helper.h"
 #include "tensor_helper.h"
+#include "directml_load_helper.h"
 
 Napi::FunctionReference InferenceSessionWrap::constructor;
 Ort::Env *InferenceSessionWrap::ortEnv;
 
 Napi::Object InferenceSessionWrap::Init(Napi::Env env, Napi::Object exports) {
+#if defined(USE_DML) && defined(_WIN32)
+  LoadDirectMLDll(env);
+#endif
   // create ONNX runtime env
   Ort::InitApi();
   ortEnv = new Ort::Env{ORT_LOGGING_LEVEL_WARNING, "onnxruntime-node"};
@@ -30,6 +34,10 @@ Napi::Object InferenceSessionWrap::Init(Napi::Env env, Napi::Object exports) {
   constructor.SuppressDestruct();
 
   exports.Set("InferenceSession", func);
+
+  Napi::Function listSupportedBackends = Napi::Function::New(env, InferenceSessionWrap::ListSupportedBackends);
+  exports.Set("listSupportedBackends", listSupportedBackends);
+
   return exports;
 }
 
@@ -151,6 +159,7 @@ Napi::Value InferenceSessionWrap::Run(const Napi::CallbackInfo &info) {
   std::vector<bool> reuseOutput;
   size_t inputIndex = 0;
   size_t outputIndex = 0;
+  OrtMemoryInfo* memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault).release();
 
   try {
     for (auto &name : inputNames_) {
@@ -158,7 +167,7 @@ Napi::Value InferenceSessionWrap::Run(const Napi::CallbackInfo &info) {
         inputIndex++;
         inputNames_cstr.push_back(name.c_str());
         auto value = feed.Get(name);
-        inputValues.push_back(NapiValueToOrtValue(env, value));
+        inputValues.push_back(NapiValueToOrtValue(env, value, memory_info));
       }
     }
     for (auto &name : outputNames_) {
@@ -167,7 +176,7 @@ Napi::Value InferenceSessionWrap::Run(const Napi::CallbackInfo &info) {
         outputNames_cstr.push_back(name.c_str());
         auto value = fetch.Get(name);
         reuseOutput.push_back(!value.IsNull());
-        outputValues.emplace_back(value.IsNull() ? Ort::Value{nullptr} : NapiValueToOrtValue(env, value));
+        outputValues.emplace_back(value.IsNull() ? Ort::Value{nullptr} : NapiValueToOrtValue(env, value, memory_info));
       }
     }
 
@@ -194,4 +203,34 @@ Napi::Value InferenceSessionWrap::Run(const Napi::CallbackInfo &info) {
   } catch (std::exception const &e) {
     ORT_NAPI_THROW_ERROR(env, e.what());
   }
+}
+
+Napi::Value InferenceSessionWrap::ListSupportedBackends(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::EscapableHandleScope scope(env);
+  Napi::Array result = Napi::Array::New(env);
+
+  auto createObject = [&env](const std::string& name, const bool bundled) -> Napi::Object {
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("name", name);
+    result.Set("bundled", bundled);
+    return result;
+  };
+
+  result.Set(uint32_t(0), createObject("cpu", true));
+
+#ifdef USE_DML
+  result.Set(result.Length(), createObject("dml", true));
+#endif
+#ifdef USE_CUDA
+  result.Set(result.Length(), createObject("cuda", false));
+#endif
+#ifdef USE_TENSORRT
+  result.Set(result.Length(), createObject("tensorrt", false));
+#endif
+#ifdef USE_COREML
+  result.Set(result.Length(), createObject("coreml", true));
+#endif
+
+  return scope.Escape(result);
 }

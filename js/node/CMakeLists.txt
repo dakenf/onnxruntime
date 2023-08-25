@@ -30,6 +30,28 @@ include_directories(${CMAKE_JS_INC})
 include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/session)
 include_directories(${CMAKE_SOURCE_DIR}/node_modules/node-addon-api)
 
+# optional providers
+option(USE_DML "Build with DirectML support" OFF)
+option(USE_CUDA "Build with CUDA support" OFF)
+option(USE_TENSORRT "Build with TensorRT support" OFF)
+option(USE_COREML "Build with CoreML support" OFF)
+
+if(USE_DML)
+  add_compile_definitions(USE_DML=1)
+  include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/dml)
+endif()
+if(USE_CUDA)
+  add_compile_definitions(USE_CUDA=1)
+endif()
+if(USE_TENSORRT)
+  add_compile_definitions(USE_TENSORRT=1)
+  include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/tensorrt)
+endif()
+if(USE_COREML)
+  add_compile_definitions(USE_COREML=1)
+  include_directories(${CMAKE_SOURCE_DIR}/../../include/onnxruntime/core/providers/coreml)
+endif()
+
 # source files
 file(GLOB ORT_NODEJS_BINDING_SOURCE_FILES ${CMAKE_SOURCE_DIR}/src/*.cc)
 
@@ -75,6 +97,9 @@ if (WIN32)
     TARGET onnxruntime_binding POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
       ${ONNXRUNTIME_BUILD_DIR}/${CMAKE_BUILD_TYPE}/onnxruntime.dll
+      ${dist_folder}
+    COMMAND ${CMAKE_COMMAND} -E copy
+      ${ONNXRUNTIME_BUILD_DIR}/${CMAKE_BUILD_TYPE}/DirectML.dll
       ${dist_folder}
   )
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
