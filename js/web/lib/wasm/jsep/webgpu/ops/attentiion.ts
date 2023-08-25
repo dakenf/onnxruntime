@@ -265,7 +265,7 @@ const computeAttentionProbs =
 
       let kInput = 'key';
       let packedKOffset = '';
-      if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) { // packed QKV in Q
+      if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {  // packed QKV in Q
         kInput = 'q';
         packedKOffset = `+ ${parameters.hiddenSize} + idxWoGemmSize * 2 * ${parameters.hiddenSize}`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
@@ -287,14 +287,12 @@ const computeAttentionProbs =
       ];
       if (key) {
         inputDeclarations.push(
-          `@group(0) @binding(${inputDeclarations.length}) var<storage, read> key: array<${dataType}>;`
-        );
+            `@group(0) @binding(${inputDeclarations.length}) var<storage, read> key: array<${dataType}>;`);
         inputs.push(key);
       }
       if (bias) {
         inputDeclarations.push(
-          `@group(0) @binding(${inputDeclarations.length}) var<storage, read> bias: array<${dataType}>;`
-        );
+            `@group(0) @binding(${inputDeclarations.length}) var<storage, read> bias: array<${dataType}>;`);
         inputs.push(bias);
       }
       const getShaderSource = (shaderHelper: ShaderHelper) => `

@@ -247,8 +247,8 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   const params = validateInputs(context.inputs, attributes);
   if (context.inputs[0].dims.length === 5 || context.inputs[1]?.dims.length === 5) {
     return applyAttention(
-      context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
-      context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
+        context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
+        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
   }
 
   const kvBNSH = context.inputs[1] && context.inputs[2] && context.inputs[1].dims.length === 4 &&
