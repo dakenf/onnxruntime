@@ -268,10 +268,10 @@ const computeAttentionProbs =
       let packedKOffset = `${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize `;
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {  // packed QKV in Q
         kInput = 'q';
-        packedKOffset = `${parameters.hiddenSize} + idxWoGemmSize * ${parameters.hiddenSize} * 3`;
-        packedQOffset = `batchIndex * ${parameters.hiddenSize} * 3 + headIndex * ${parameters.headSize}`;
+        packedQOffset = `batchIndex * ${parameters.vHiddenSize} * 3 + headIndex * ${parameters.vHeadSize}`;
+        packedKOffset = `${parameters.hiddenSize} + inputOffset`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-        packedKOffset = `idxWoGemmSize * ${parameters.vHiddenSize}`;
+        packedKOffset = `batchIndex * ${parameters.vHiddenSize} * 2 + headIndex * ${parameters.vHeadSize}`;
       }
 
       const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
@@ -315,8 +315,8 @@ const computeAttentionProbs =
     let outputOffset = idxWoGemmSize * ${parameters.sequenceLength * parameters.totalSequenceLength};
     let batchIndex = idxWoGemmSize / numHeads;
     let headIndex = idxWoGemmSize % numHeads;
-    let kOffset = ${packedKOffset};
     let inputOffset = ${packedQOffset};
+    let kOffset = ${packedKOffset};
 
     if (global_idx >= ${unitsOfWork} || batchIndex > batchSize) {
         return;
@@ -368,11 +368,11 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
 
-  let packedVOffset = '';
+  let packedVOffset = 'stack * (K * N) + n';
   if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
-    packedVOffset = ` + ${params.hiddenSize * 2} + stack * ${params.hiddenSize} * 2`;
+    packedVOffset = `stack * (K * N) + n + ${params.hiddenSize * 2} + stack * ${params.hiddenSize} * 2`;
   } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-    packedVOffset = ` + stack * ${params.vHiddenSize}`;
+    packedVOffset = ` + stack / ${params.numHeads} * ${params.vHiddenSize} + stack % ${params.numHeads} * ${params.vHeadSize}`;
   }
 
   const dataType = 'f32';
@@ -380,6 +380,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
   const K: u32 = ${params.totalSequenceLength}u;
+  const numHeads: u32 = ${params.numHeads}u;
 
   @group(0) @binding(0) var<storage, read> probs : array<${dataType}>;
   @group(0) @binding(1) var<storage, read> v : array<${dataType}>;
@@ -390,13 +391,15 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
     let n = global_idx % N;
     let m = (global_idx / N) % M;
     let stack = global_idx / (M * N);
+    let batchIndex = stack / numHeads;
+    let headIndex = stack % numHeads;
 
     let offsetA = stack * (M * K) + m * K;
-    let offsetB = stack * (K * N) + n;
+    let offsetB = ${packedVOffset};
 
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<K; k++) {
-      value += probs[offsetA + k] * v[offsetB + k * N ${packedVOffset}];
+      value += probs[offsetA + k] * v[offsetB + k * N];
     }
     output[global_idx] = value;
   }`;
