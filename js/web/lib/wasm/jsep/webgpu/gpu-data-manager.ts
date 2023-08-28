@@ -57,14 +57,10 @@ interface StorageCacheValue {
   originalSize: number;
 }
 
-interface DownloadCacheValue {
-  data: Promise<ArrayBufferLike>;
-}
-
 /**
  * normalize the buffer size so that it fits the 128-bits (16 bytes) alignment.
  */
-const calcNormalizedBufferSize = (size: number) => Math.ceil(Number(size) / 16) * 16;
+const calcNormalizedBufferSize = (size: number) => Math.ceil(size / 16) * 16;
 
 let guid = 0;
 const createNewGpuDataId = () => guid++;
@@ -72,9 +68,6 @@ const createNewGpuDataId = () => guid++;
 class GpuDataManagerImpl implements GpuDataManager {
   // GPU Data ID => GPU Data ( storage buffer )
   storageCache: Map<GpuDataId, StorageCacheValue>;
-
-  // GPU Data ID => GPU Data ( read buffer )
-  downloadCache: Map<GpuDataId, DownloadCacheValue>;
 
   // pending buffers for uploading ( data is unmapped )
   private buffersForUploadingPending: GPUBuffer[];
@@ -86,7 +79,6 @@ class GpuDataManagerImpl implements GpuDataManager {
 
   constructor(private backend: WebGpuBackend) {
     this.storageCache = new Map();
-    this.downloadCache = new Map();
     this.freeBuffers = new Map();
     this.buffersForUploadingPending = [];
     this.buffersPending = [];
@@ -160,20 +152,6 @@ class GpuDataManagerImpl implements GpuDataManager {
     // eslint-disable-next-line no-bitwise
     if ((usage & GPUBufferUsage.STORAGE) === GPUBufferUsage.STORAGE) {
       let buffers = this.freeBuffers.get(bufferSize);
-      // if (!buffers || !buffers.length) {
-      //   const existingSizes = this.freeBuffers.keys();
-      //   const existingSizesSorted = Array.from(existingSizes).sort((a, b) => a - b);
-      //   for (const size of existingSizesSorted) {
-      //     if (size > bufferSize) {
-      //       const buffers = this.freeBuffers.get(size);
-      //       if(buffers && buffers.length) {
-      //         gpuBuffer = buffers.pop();
-      //       }
-      //     }
-      //   }
-      // }
-      //
-      // if (!gpuBuffer) {
       if (!buffers) {
         buffers = [];
         this.freeBuffers.set(bufferSize, buffers);
@@ -184,14 +162,13 @@ class GpuDataManagerImpl implements GpuDataManager {
         // create gpu buffer
         gpuBuffer = this.backend.device.createBuffer({size: bufferSize, usage});
       }
-      // }
     } else {
       // create gpu buffer
       gpuBuffer = this.backend.device.createBuffer({size: bufferSize, usage});
     }
 
     const gpuData = {id: createNewGpuDataId(), type: GpuDataType.default, buffer: gpuBuffer};
-    this.storageCache.set(gpuData.id, {gpuData, originalSize: Number(size)});
+    this.storageCache.set(gpuData.id, {gpuData, originalSize: size});
 
     LOG_DEBUG('verbose', () => `[WebGPU] GpuDataManager.create(size=${size}) => id=${gpuData.id}`);
     return gpuData;
@@ -202,9 +179,6 @@ class GpuDataManagerImpl implements GpuDataManager {
   }
 
   release(id: GpuDataId): number {
-    if (typeof id === 'bigint') {
-      id = Number(id);
-    }
     const cachedData = this.storageCache.get(id);
     if (!cachedData) {
       throw new Error('releasing data does not exist');
@@ -216,23 +190,10 @@ class GpuDataManagerImpl implements GpuDataManager {
     this.buffersPending.push(cachedData.gpuData.buffer);
     // cachedData.gpuData.buffer.destroy();
 
-    const downloadingData = this.downloadCache.get(id);
-    if (downloadingData) {
-      this.downloadCache.delete(id);
-    }
-
     return cachedData.originalSize;
   }
 
   async download(id: GpuDataId): Promise<ArrayBufferLike> {
-    if (typeof id === 'bigint') {
-      id = Number(id);
-    }
-    const downloadData = this.downloadCache.get(id);
-    if (downloadData) {
-      return downloadData.data;
-    }
-
     const cachedData = this.storageCache.get(id);
     if (!cachedData) {
       throw new Error('data does not exist');
@@ -250,17 +211,13 @@ class GpuDataManagerImpl implements GpuDataManager {
     );
     this.backend.flush();
 
-    const readDataPromise = new Promise<ArrayBuffer>((resolve) => {
+    return new Promise<ArrayBuffer>((resolve) => {
       gpuReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
         const data = gpuReadBuffer.getMappedRange().slice(0);
         gpuReadBuffer.destroy();
         resolve(data);
       });
     });
-
-    this.downloadCache.set(id, {data: readDataPromise});
-
-    return readDataPromise;
   }
 
   refreshPendingBuffers(): void {
@@ -293,7 +250,6 @@ class GpuDataManagerImpl implements GpuDataManager {
     });
 
     this.storageCache = new Map();
-    this.downloadCache = new Map();
     this.freeBuffers = new Map();
   }
 }
