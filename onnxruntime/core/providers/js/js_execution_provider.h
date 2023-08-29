@@ -45,7 +45,7 @@ class JsExecutionProvider : public IExecutionProvider {
 
   // JSEP disallow concurrent run because actual implementation (eg. WebGPU backend) relies on global states to work,
   // and concurrent run with async function may mess up the states and cause undefined behavior.
-  bool ConcurrentRunSupported() const override { return true; }
+  bool ConcurrentRunSupported() const override { return false; }
 
   std::vector<AllocatorPtr> CreatePreferredAllocators() override;
 };

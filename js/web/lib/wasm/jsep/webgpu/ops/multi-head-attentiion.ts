@@ -1,9 +1,12 @@
 import {TensorView} from '../../tensor';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
-import {ComputeContext} from '../types';
+import {ComputeContext, GpuDataType} from '../types';
 
 import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat} from './attentiion';
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
+import {ShapeUtil} from "../../util";
+import {ShaderHelper} from "./common";
+import {DataType} from "../../../wasm-common";
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
   const query = inputs[0];
@@ -62,7 +65,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     throw new Error('Input \'past_key\' and \'past_value\' shall be both present or both absent')
   }
 
-  let qkvFormat = AttentionQkvFormat.Q_K_V_BSNH;
+  let qkvFormat: AttentionQkvFormat;
   if (key) {
     if (query.dims.length !== 3) {
       throw new Error('Input \'query\' is expected to have 3 dimensions when key is given');
@@ -172,20 +175,20 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   //   }
   // }
 
-  if (bias) {
-    throw new Error('bias is not supported');
-  }
+  // if (bias) {
+  //   throw new Error('bias is not supported');
+  // }
   if (keyPaddingMask) {
     throw new Error('Key padding mask is not supported');
   }
   if (relativePositionBias) {
-    throw new Error('extraAddQk is not supported')
+    throw new Error('extraAddQk is not supported');
   }
   if (pastKey) {
-    throw new Error('pastKey is not supported')
+    throw new Error('pastKey is not supported');
   }
   if (pastValue) {
-    throw new Error('pastValue is not supported')
+    throw new Error('pastValue is not supported');
   }
 
   return {
@@ -219,6 +222,49 @@ export const parseMultiHeadAttentionAttributes = (attributes: AttentionAttrs): A
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
 const packedWeightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3, 4]});
 
+const addBiasTranspose = (context: ComputeContext, qkv: TensorView, bias: TensorView, batchSize: number,
+                          sequenceLength: number, hiddenSize: number, biasOffset: number) => {
+  const addBiasTransposeMetadata = {
+    name: 'addBiasTranspose',
+    inputTypes: [GpuDataType.default, GpuDataType.default],
+    cacheHint: JSON.stringify({batchSize, sequenceLength, hiddenSize}),
+  };
+
+  const outputShape = [batchSize, sequenceLength, hiddenSize];
+  const outputSize = ShapeUtil.size(outputShape);
+
+  const dataType = 'f32';
+  const getShaderSource = (shaderHelper: ShaderHelper) => `
+  const biasOffset = ${biasOffset}u;
+  const hiddenSize = ${hiddenSize}u;
+
+  @group(0) @binding(0) var<storage, read> qkv: array<${dataType}>;
+  @group(0) @binding(1) var<storage, read> bias: array<${dataType}>;
+  @group(0) @binding(2) var<storage, read_write> qkv_with_bias: array<${dataType}>;
+
+  ${shaderHelper.mainStart()}
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
+    let biasOffsetIdx = (global_idx % hiddenSize) + biasOffset;
+
+    qkv_with_bias[global_idx] = qkv[global_idx] + bias[biasOffsetIdx];
+  }`;
+  // return {
+  //   ...addBiasTransposeMetadata,
+  //   outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+  //   getShaderSource,
+  //   dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+  // };
+
+  return context.compute(
+      {
+        ...addBiasTransposeMetadata,
+        outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+        getShaderSource,
+        dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+      },
+      {inputs: [qkv, bias], outputs: [-1]})[0];
+};
+
 const maybeTransposeToBNSHAndAddBias =
     (context: ComputeContext, batchSize: number, numHeads: number, sequenceLength: number, headSize: number,
      input: TensorView, bias?: TensorView, biasOffset?: number) => {
@@ -240,14 +286,22 @@ const maybeTransposeToBNSHAndAddBias =
         if (sequenceLength === 1) {
           throw new Error('AddBiasReshape is not implemented. Please export your model with packed QKV or KV');
         } else {
-          throw new Error('AddBiasTranspose is not implemented. Please export your model with packed QKV or KV');
+          reshapedInput = addBiasTranspose(context, input, bias, batchSize, sequenceLength, numHeads * headSize, biasOffset!);
+          reshapedInput = input.reshape([batchSize, sequenceLength, numHeads, headSize]);
+          return context.compute(
+              {
+                ...transposeProgramMetadata,
+                cacheHint: weightTransposeAttribute.cacheKey,
+                get: () => createTransposeProgramInfo(reshapedInput, weightTransposeAttribute.perm)
+              },
+              {inputs: [reshapedInput], outputs: [-1]})[0];
         }
       }
     };
 
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
-
+  console.log('params', params);
   // TODO: write attention implementation that does not need packed weight transpose
   if (context.inputs[0].dims.length === 5) {
     const Q = context.compute(
