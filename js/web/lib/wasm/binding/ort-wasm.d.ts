@@ -12,8 +12,8 @@ declare namespace JSEP {
   type RunFunction = (kernel: number, contextDataOffset: number) => number;
 }
 export type FSNode = {
-  contents: Uint8Array; usedBytes: number;
-}
+  contents: ArrayBuffer; usedBytes: number;
+};
 
 export interface OrtWasmModule extends EmscriptenModule {
   HEAP64: BigInt64Array;

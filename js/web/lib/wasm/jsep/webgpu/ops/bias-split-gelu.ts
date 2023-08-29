@@ -5,8 +5,9 @@ import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {ShaderHelper, tensorTypeToWsglStorageType} from './common';
+import {inputVariable, outputVariable, ShaderHelper} from './common';
 import {erfImpl} from './unary-op';
+import {ShapeUtil} from "../../util";
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (inputs[0].dataType !== DataType.float) {
@@ -31,45 +32,32 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
 };
 
 const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
-  const input = inputs[0];
-  const outputShape = input.dims.slice();
+  const outputShape = inputs[0].dims.slice();
   outputShape[2] = outputShape[2] / 2;
 
-  const gridSize = outputShape[0] * outputShape[1];
-  const halfHiddenSize = outputShape[2];
-  const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
-  const blockSize = halfHiddenSize / 256;
-  const outputSize = gridSize;
+  const channels = inputs[0].dims[2];
+  const outputSize = ShapeUtil.size(outputShape);
+  const input = inputVariable('input', inputs[0].dataType, inputs[0].dims);
+  const bias = inputVariable('bias', inputs[0].dataType, [channels]);
+  const output = outputVariable('output', inputs[0].dataType, outputShape);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M_SQRT2 = sqrt(2.0);
-  const TPB = 256;
-
-  @group(0) @binding(0) var<storage, read> input : array<${dataType}>;
-  @group(0) @binding(1) var<storage, read> bias : array<${dataType}>;
-  @group(0) @binding(2) var<storage, read_write> output : array<${dataType}>;
+  const channels = ${channels}u;
+  const halfHiddenSize = ${outputShape[2]}u;
+  ${shaderHelper.declareVariables(input, bias, output)}
 
   ${erfImpl('f32')}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let blockIdx = global_idx / ${halfHiddenSize};
-    let threadIdx = global_idx % 256;
+    let biasIdx = global_idx % channels;
+    let itemIndex = global_idx * 2;
+    let valueLeft = ${input.getByOffset('itemIndex')} + ${bias.getByOffset('biasIdx')};
+    let valueRight = ${input.getByOffset('itemIndex + 1')} + ${bias.getByOffset('biasIdx + halfHiddenSize')};
+    let geluRight = valueRight * 0.5 * (erf_vf32(valueRight / M_SQRT2) + 1);
 
-    var indexInput = blockIdx * ${halfHiddenSize} * 2 + threadIdx;
-    var indexOutput = blockIdx * ${halfHiddenSize} + threadIdx;
-    var indexBias = threadIdx;
-
-    for (var h: u32 = 0u; h < ${blockSize}; h++) {
-      let valueLeft = input[indexInput] + bias[indexBias];
-      let valueRight = input[indexInput + ${halfHiddenSize}] + bias[indexBias + ${halfHiddenSize}];
-
-      let geluRight = valueRight * 0.5 * (erf_vf32(valueRight / M_SQRT2) + 1);
-      output[indexOutput] = valueLeft * geluRight;
-      indexInput += TPB;
-      indexOutput += TPB;
-      indexBias += TPB;
-    }
+    ${output.setByOffset('global_idx', 'valueLeft * geluRight')}
   }`;
 
   return {

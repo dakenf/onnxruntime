@@ -268,7 +268,7 @@ const computeAttentionProbs =
       let packedKOffset = `${parameters.kvSequenceLength * parameters.headSize} * idxWoGemmSize `;
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {  // packed QKV in Q
         kInput = 'q';
-        packedQOffset = `batchIndex * ${parameters.vHiddenSize} * 3 + headIndex * ${parameters.vHeadSize}`;
+        packedQOffset = `batchIndex * ${parameters.sequenceLength} * 3 + headIndex * ${parameters.headSize}`;
         packedKOffset = `${parameters.hiddenSize} + inputOffset`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
         packedKOffset = `batchIndex * ${parameters.vHiddenSize} * 2 + headIndex * ${parameters.vHeadSize}`;
@@ -372,7 +372,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
     packedVOffset = `stack * (K * N) + n + ${params.hiddenSize * 2} + stack * ${params.hiddenSize} * 2`;
   } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-    packedVOffset = ` + stack / ${params.numHeads} * ${params.vHiddenSize} + stack % ${params.numHeads} * ${params.vHeadSize}`;
+    packedVOffset = `stack * (K * N) + n + ${params.vHiddenSize}`;
   }
 
   const dataType = 'f32';

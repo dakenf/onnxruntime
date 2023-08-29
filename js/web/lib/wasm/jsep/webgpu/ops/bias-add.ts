@@ -6,7 +6,7 @@ import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {ShaderHelper, tensorTypeToWsglStorageType} from './common';
+import {inputVariable, outputVariable, ShaderHelper} from './common';
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (inputs[0].dataType !== DataType.float) {
@@ -30,36 +30,25 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
   }
 };
 
-const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
-  const input = inputs[0];
-  const outputShape = input.dims.slice();
+const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
+  const outputShape = inputs[0].dims.slice();
 
-  const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
-  const threadsPerBlock = 64;
-  const channels = input.dims[2];
-  const blockSize = channels / threadsPerBlock;
-  const outputSize = ShapeUtil.size(outputShape) * threadsPerBlock;
+  const channels = inputs[0].dims[2];
+  const outputSize = ShapeUtil.size(outputShape);
+  const input = inputVariable('input', inputs[0].dataType, inputs[0].dims);
+  const bias = inputVariable('bias', inputs[0].dataType, [channels]);
+  const residual = inputVariable('residual', inputs[0].dataType, inputs[0].dims);
+  const output = outputVariable('output', inputs[0].dataType, outputShape);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const TPB = ${threadsPerBlock}u;
-  @group(0) @binding(0) var<storage, read> input : array<${dataType}>;
-  @group(0) @binding(1) var<storage, read> bias : array<${dataType}>;
-  @group(0) @binding(2) var<storage, read> residual : array<${dataType}>;
-  @group(0) @binding(3) var<storage, read_write> output : array<${dataType}>;
+  const channels = ${channels}u;
+  ${shaderHelper.declareVariables(input, bias, residual, output)}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let blockIdx = global_idx / ${channels};
-    let threadIdx = global_idx % TPB;
-
-    var baseOffset = blockIdx * ${channels} + threadIdx;
-    var biasOffset = threadIdx;
-
-    for (var h: u32 = 0u; h < ${blockSize}; h++) {
-      output[baseOffset] = input[baseOffset] + bias[biasOffset] + residual[baseOffset];
-      baseOffset += TPB;
-      biasOffset += TPB;
-    }
+    let value = ${input.getByOffset('global_idx')} 
+      + ${bias.getByOffset('global_idx % channels')} + ${residual.getByOffset('global_idx')};
+    ${output.setByOffset('global_idx', 'value')}
   }`;
 
   return {
@@ -78,5 +67,5 @@ export const biasAdd = (context: ComputeContext): void => {
     inputTypes,
   };
 
-  context.compute(createBiasSplitGeluProgramInfo(metadata, context.inputs));
+  context.compute(createBiasAddProgramInfo(metadata, context.inputs));
 };
