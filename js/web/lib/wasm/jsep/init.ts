@@ -150,11 +150,11 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
         (src: number, dst: number, size: number, isSourceGpu = false) => {
           if (isSourceGpu) {
             LOG_DEBUG('verbose', () => `[WebGPU] jsepCopyGpuToGpu: src=${src}, dst=${dst}, size=${size}`);
-            backend.memcpy(src, dst);
+            backend.memcpy(Number(src), Number(dst));
           } else {
             LOG_DEBUG('verbose', () => `[WebGPU] jsepCopyCpuToGpu: dataOffset=${src}, gpuDataId=${dst}, size=${size}`);
             const data = module.HEAPU8.subarray(Number(src), Number(src) + Number(size));
-            backend.upload(dst, data);
+            backend.upload(Number(dst), data);
           }
         },
 
