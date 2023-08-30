@@ -3,11 +3,11 @@
 
 import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
-import {BroadcastUtil, ShapeUtil} from '../../util';
-import {ComputeContext, GpuDataType, ProgramInfo, ProgramInfoLoader, ProgramMetadata} from '../types';
+import {BroadcastUtil} from '../../util';
+import {ComputeContext, GpuDataType, ProgramInfoLoader} from '../types';
 
-import {ShaderHelper} from './common';
-import {getActicationSnippet, InternalActivationAttributes} from './fuse-utils';
+import {createMatmulProgramInfo} from './3rd-party/matmul_packed_webgpu';
+import {InternalActivationAttributes} from './fuse-utils';
 
 
 const createMatmulProgramMetadata = (hasBias: boolean, cacheHint: string) => ({
@@ -17,67 +17,12 @@ const createMatmulProgramMetadata = (hasBias: boolean, cacheHint: string) => ({
   cacheHint
 });
 
-const createMatmulProgramInfo =
-    (metadata: ProgramMetadata, inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes):
-        ProgramInfo => {
-          const aShape = inputs[0].dims;
-          const bShape = inputs[1].dims;
-          const outputShape = BroadcastUtil.calcShape(aShape, bShape, true);
-          if (!outputShape) {
-            throw new Error('Can\'t use matmul on the given tensors');
-          }
-          const outputSize = ShapeUtil.size(outputShape);
-          const broadcastA = (aShape.length < outputShape.length || aShape[aShape.length - 2] === 1);
-          const broadcastB = (bShape.length < outputShape.length || bShape[bShape.length - 1] === 1);
-
-          const dataType = 'f32';  // TODO: support other data type
-          const {activationFunction, applyActivation} = getActicationSnippet(activationAttributes);
-
-          const M = outputShape[outputShape.length - 2];
-          const K = aShape[aShape.length - 1];
-          const N = outputShape[outputShape.length - 1];
-          const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const M: u32 = ${M}u;
-  const N: u32 = ${N}u;
-  const K: u32 = ${K}u;
-
-  @group(0) @binding(0) var<storage, read> a : array<${dataType}>;
-  @group(0) @binding(1) var<storage, read> b : array<${dataType}>;
-  @group(0) @binding(2) var<storage, read_write> output : array<${dataType}>;
-
-  ${activationFunction}
-
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-
-    let stack = global_idx / (M * N);
-    let mn = global_idx % (M * N);
-    let n = global_idx % N;
-    let m = mn / N;
-
-    let offsetA = ${broadcastA ? 'm * K' : 'stack * (M * K) + m * K'};
-    let offsetB = ${broadcastB ? 'n' : 'stack * (K * N) + n'};
-
-    var value = ${dataType}(0);
-    for (var k: u32 = 0u; k<${K}u; k++) {
-      value += a[offsetA + k] * b[offsetB + k * N];
-    }
-    ${applyActivation}
-    output[global_idx] = value;
-  }`;
-          return {
-            ...metadata,
-            outputs: [{dims: outputShape, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default}],
-            getShaderSource,
-            dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-          };
-        };
-
 export const createMatmulProgramInfoLoader =
-    (inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes): ProgramInfoLoader => {
-      const metadata = createMatmulProgramMetadata(inputs.length > 2, activationAttributes.activationCacheKey);
-      return {...metadata, get: () => createMatmulProgramInfo(metadata, inputs, activationAttributes)};
-    };
+    (inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes, outputShape: readonly number[]):
+        ProgramInfoLoader => {
+          const metadata = createMatmulProgramMetadata(inputs.length > 2, activationAttributes.activationCacheKey);
+          return {...metadata, get: () => createMatmulProgramInfo(metadata, inputs, activationAttributes, outputShape)};
+        };
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (!inputs || inputs.length !== 2) {
@@ -95,6 +40,9 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
 
 export const matMul = (context: ComputeContext): void => {
   validateInputs(context.inputs);
-
-  context.compute(createMatmulProgramInfoLoader(context.inputs, {activation: '', activationCacheKey: ''}));
+  const outputShape = BroadcastUtil.calcShape(context.inputs[0].dims, context.inputs[1].dims, true);
+  if (!outputShape) {
+    throw new Error('Can\'t use matmul on the given tensors');
+  }
+  context.compute(createMatmulProgramInfoLoader(context.inputs, {activation: '', activationCacheKey: ''}, outputShape));
 };
