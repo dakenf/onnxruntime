@@ -3,11 +3,11 @@
 
 import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
+import {ShapeUtil} from '../../util';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {inputVariable, outputVariable, ShaderHelper, tensorTypeToWsglStorageType} from './common';
+import {inputVariable, outputVariable, ShaderHelper} from './common';
 import {erfImpl} from './unary-op';
-import {ShapeUtil} from "../../util";
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (inputs[0].dataType !== DataType.float) {
@@ -35,29 +35,28 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
   const outputShape = inputs[0].dims.slice();
   outputShape[2] = outputShape[2] / 2;
 
-  const channels = inputs[0].dims[2];
-  const outputSize = ShapeUtil.size(outputShape);
+  const input = inputVariable('input', inputs[0].dataType, inputs[0].dims, 4);
+  const bias = inputVariable('bias', inputs[0].dataType, [inputs[0].dims[2]], 4);
+  const output = outputVariable('output', inputs[0].dataType, outputShape, 4);
+
+  const outputSize = ShapeUtil.size(outputShape) / 4;
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M_SQRT2 = sqrt(2.0);
-  const channels = ${channels}u;
-  const rightBiasOffset = ${outputShape[2] / 8}u;
+  const halfChannels = ${inputs[0].dims[2] / 4 / 2}u;
 
-  @group(0) @binding(0) var<storage, read> input : array<mat4x2f>;
-  @group(0) @binding(1) var<storage, read> bias : array<vec4f>;
-  @group(0) @binding(1) var<storage, read> output : array<vec4f>;
+  ${shaderHelper.declareVariables(input, bias, output)}
 
-  ${erfImpl('f32')}
+  ${erfImpl('vec4f')}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let biasIdx = global_idx % channels;
-    let itemIndex = global_idx;
-    let valueLeft = input[global_idx][0] + bias[biasIdx];
-    let valueRight = input[global_idx][1] + bias[biasIdx + rightBiasOffset];
+    let biasIdx = global_idx % halfChannels;
+    let valueLeft = input[global_idx] + bias[biasIdx];
+    let valueRight = input[global_idx + halfChannels] + bias[biasIdx + halfChannels];
     let geluRight = valueRight * 0.5 * (erf_vf32(valueRight / M_SQRT2) + 1);
 
-    output[global_idx] = valueLeft * geluRight;
+    ${output.setByOffset('global_idx', 'valueLeft * geluRight')}
   }`;
 
   return {

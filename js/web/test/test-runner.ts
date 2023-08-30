@@ -19,13 +19,6 @@ import {tensorDataTypeStringToEnum} from '../lib/wasm/wasm-common';
 import {base64toBuffer, createMockGraph, readFile} from './test-shared';
 import {Test} from './test-types';
 
-// import {onnxruntimeBackend, listSupportedBackends} from '../../node/lib/backend';
-// const backends = listSupportedBackends();
-// for (const backend of backends) {
-//   ort.registerBackend(backend.name, onnxruntimeBackend, 100);
-// }
-// console.log(backends);
-
 // the threshold that used to compare 2 float numbers. See above for TensorResultValidator.floatEqual().
 const CPU_THRESHOLD_ABSOLUTE_ERROR = 1.0e-4;
 const CPU_THRESHOLD_RELATIVE_ERROR = 1.000001;

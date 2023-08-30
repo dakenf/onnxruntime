@@ -44,7 +44,7 @@ const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly Te
   const output = outputVariable('output', dataType, outputShape, 4);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const channels = ${channels}u;
+  const channels = ${channels}u / 4;
   ${shaderHelper.declareVariables(input, bias, residual, output)}
 
   ${shaderHelper.mainStart()}

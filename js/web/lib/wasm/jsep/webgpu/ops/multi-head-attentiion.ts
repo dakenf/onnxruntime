@@ -1,12 +1,12 @@
+import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
+import {ShapeUtil} from '../../util';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
 import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat} from './attentiion';
+import {ShaderHelper} from './common';
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
-import {ShapeUtil} from "../../util";
-import {ShaderHelper} from "./common";
-import {DataType} from "../../../wasm-common";
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
   const query = inputs[0];
@@ -236,19 +236,20 @@ export const parseMultiHeadAttentionAttributes = (attributes: AttentionAttrs): A
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
 const packedWeightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3, 4]});
 
-const addBiasTranspose = (context: ComputeContext, qkv: TensorView, bias: TensorView, batchSize: number,
-                          sequenceLength: number, hiddenSize: number, biasOffset: number) => {
-  const addBiasTransposeMetadata = {
-    name: 'addBiasTranspose',
-    inputTypes: [GpuDataType.default, GpuDataType.default],
-    cacheHint: JSON.stringify({batchSize, sequenceLength, hiddenSize}),
-  };
+const addBiasTranspose =
+    (context: ComputeContext, qkv: TensorView, bias: TensorView, batchSize: number, sequenceLength: number,
+     hiddenSize: number, biasOffset: number) => {
+      const addBiasTransposeMetadata = {
+        name: 'addBiasTranspose',
+        inputTypes: [GpuDataType.default, GpuDataType.default],
+        cacheHint: JSON.stringify({batchSize, sequenceLength, hiddenSize}),
+      };
 
-  const outputShape = [batchSize, sequenceLength, hiddenSize];
-  const outputSize = ShapeUtil.size(outputShape);
+      const outputShape = [batchSize, sequenceLength, hiddenSize];
+      const outputSize = ShapeUtil.size(outputShape);
 
-  const dataType = 'f32';
-  const getShaderSource = (shaderHelper: ShaderHelper) => `
+      const dataType = 'f32';
+      const getShaderSource = (shaderHelper: ShaderHelper) => `
   const biasOffset = ${biasOffset}u;
   const hiddenSize = ${hiddenSize}u;
 
@@ -262,22 +263,22 @@ const addBiasTranspose = (context: ComputeContext, qkv: TensorView, bias: Tensor
 
     qkv_with_bias[global_idx] = qkv[global_idx] + bias[biasOffsetIdx];
   }`;
-  // return {
-  //   ...addBiasTransposeMetadata,
-  //   outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-  //   getShaderSource,
-  //   dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-  // };
+      // return {
+      //   ...addBiasTransposeMetadata,
+      //   outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+      //   getShaderSource,
+      //   dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+      // };
 
-  return context.compute(
-      {
-        ...addBiasTransposeMetadata,
-        outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-        getShaderSource,
-        dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-      },
-      {inputs: [qkv, bias], outputs: [-1]})[0];
-};
+      return context.compute(
+          {
+            ...addBiasTransposeMetadata,
+            outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+            getShaderSource,
+            dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+          },
+          {inputs: [qkv, bias], outputs: [-1]})[0];
+    };
 
 const maybeTransposeToBNSHAndAddBias =
     (context: ComputeContext, batchSize: number, numHeads: number, sequenceLength: number, headSize: number,
@@ -300,7 +301,8 @@ const maybeTransposeToBNSHAndAddBias =
         if (sequenceLength === 1) {
           throw new Error('AddBiasReshape is not implemented. Please export your model with packed QKV or KV');
         } else {
-          reshapedInput = addBiasTranspose(context, input, bias, batchSize, sequenceLength, numHeads * headSize, biasOffset!);
+          reshapedInput =
+              addBiasTranspose(context, input, bias, batchSize, sequenceLength, numHeads * headSize, biasOffset!);
           reshapedInput = input.reshape([batchSize, sequenceLength, numHeads, headSize]);
           return context.compute(
               {
@@ -328,8 +330,8 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
         },
         {inputs: [context.inputs[0]], outputs: [-1]})[0];
     return applyAttention(
-        context, Q, context.inputs[1], context.inputs[2], context.inputs[4], undefined,
-        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
+        context, Q, context.inputs[1], context.inputs[2], context.inputs[4], undefined, context.inputs[6],
+        context.inputs[7], context.inputs[5], params, attributes);
   }
 
   if (context.inputs[1]?.dims.length === 5) {
@@ -347,8 +349,8 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
         },
         {inputs: [context.inputs[0]], outputs: [-1]})[0];
     return applyAttention(
-        context, Q, K, context.inputs[2], context.inputs[4], undefined,
-        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
+        context, Q, K, context.inputs[2], context.inputs[4], undefined, context.inputs[6], context.inputs[7],
+        context.inputs[5], params, attributes);
   }
 
   const kvBNSH = context.inputs[1] && context.inputs[2] && context.inputs[1].dims.length === 4 &&

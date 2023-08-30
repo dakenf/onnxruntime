@@ -166,7 +166,8 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
                   () => `[WebGPU] jsepCopyGpuToCpu: gpuDataId=${gpuDataId}, dataOffset=${dataOffset}, size=${size}`);
 
               await backend.download(
-                  Number(gpuDataId), () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
+                  Number(gpuDataId),
+                  () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
             },
 
         // jsepCreateKernel

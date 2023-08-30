@@ -270,7 +270,8 @@ const computeAttentionProbs =
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
         // packed QKV in Q, transposed to BNS3H
         kInput = 'q';
-        packedQOffset = `batchIndex * ${parameters.sequenceLength} * 3 * ${parameters.headSize} + headIndex * ${parameters.sequenceLength}`;
+        packedQOffset = `batchIndex * ${parameters.sequenceLength} * 3 * ${parameters.headSize} + headIndex * ${
+            parameters.sequenceLength}`;
         packedKOffset = `${parameters.headSize} + inputOffset`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
         packedKOffset = `batchIndex * ${parameters.vHiddenSize} * 2 + headIndex * ${parameters.vHeadSize}`;
@@ -374,7 +375,8 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   // weights are already transposed to BNS* so we are just checking if they are packed
   if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
     // packed QKV in Q, transposed to BNS3H
-    packedVOffset = `n + batchIndex * ${params.sequenceLength} * 3 * ${params.headSize} + headIndex * ${params.sequenceLength} + ${params.headSize} * 2`;
+    packedVOffset = `n + batchIndex * ${params.sequenceLength} * 3 * ${params.headSize} + headIndex * ${
+        params.sequenceLength} + ${params.headSize} * 2`;
   } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
     packedVOffset = `stack * (K * N) + n + ${params.vHiddenSize}`;
   }
