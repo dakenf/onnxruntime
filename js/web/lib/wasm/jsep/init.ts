@@ -141,10 +141,10 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
         {backend},
 
         // jsepAlloc()
-        (size: number) => backend.alloc(size),
+        (size: number) => backend.alloc(Number(size)),
 
         // jsepFree()
-        (ptr: number) => backend.free(ptr),
+        (ptr: number) => backend.free(Number(ptr)),
 
         // jsepCopy(src, dst, size, isSourceGpu)
         (src: number, dst: number, size: number, isSourceGpu = false) => {
@@ -166,7 +166,7 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
                   () => `[WebGPU] jsepCopyGpuToCpu: gpuDataId=${gpuDataId}, dataOffset=${dataOffset}, size=${size}`);
 
               await backend.download(
-                  gpuDataId, () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
+                  Number(gpuDataId), () => module.HEAPU8.subarray(Number(dataOffset), Number(dataOffset) + Number(size)));
             },
 
         // jsepCreateKernel
@@ -176,7 +176,7 @@ export const init = async(module: OrtWasmModule, env: Env): Promise<void> => {
                                                                   `${kernel}`),
 
         // jsepReleaseKernel
-        (kernel: number) => backend.releaseKernel(kernel),
+        (kernel: number) => backend.releaseKernel(Number(kernel)),
 
         // jsepRun
         (kernel: number, contextDataOffset: number, sessionState: JSEP.SessionState) => {

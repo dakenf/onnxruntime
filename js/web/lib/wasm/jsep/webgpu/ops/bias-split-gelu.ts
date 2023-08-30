@@ -5,7 +5,7 @@ import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {inputVariable, outputVariable, ShaderHelper} from './common';
+import {inputVariable, outputVariable, ShaderHelper, tensorTypeToWsglStorageType} from './common';
 import {erfImpl} from './unary-op';
 import {ShapeUtil} from "../../util";
 
@@ -37,27 +37,27 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
 
   const channels = inputs[0].dims[2];
   const outputSize = ShapeUtil.size(outputShape);
-  const input = inputVariable('input', inputs[0].dataType, inputs[0].dims);
-  const bias = inputVariable('bias', inputs[0].dataType, [channels]);
-  const output = outputVariable('output', inputs[0].dataType, outputShape);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M_SQRT2 = sqrt(2.0);
   const channels = ${channels}u;
-  const halfHiddenSize = ${outputShape[2]}u;
-  ${shaderHelper.declareVariables(input, bias, output)}
+  const rightBiasOffset = ${outputShape[2] / 8}u;
+
+  @group(0) @binding(0) var<storage, read> input : array<mat4x2f>;
+  @group(0) @binding(1) var<storage, read> bias : array<vec4f>;
+  @group(0) @binding(1) var<storage, read> output : array<vec4f>;
 
   ${erfImpl('f32')}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
     let biasIdx = global_idx % channels;
-    let itemIndex = global_idx * 2;
-    let valueLeft = ${input.getByOffset('itemIndex')} + ${bias.getByOffset('biasIdx')};
-    let valueRight = ${input.getByOffset('itemIndex + 1')} + ${bias.getByOffset('biasIdx + halfHiddenSize')};
+    let itemIndex = global_idx;
+    let valueLeft = input[global_idx][0] + bias[biasIdx];
+    let valueRight = input[global_idx][1] + bias[biasIdx + rightBiasOffset];
     let geluRight = valueRight * 0.5 * (erf_vf32(valueRight / M_SQRT2) + 1);
 
-    ${output.setByOffset('global_idx', 'valueLeft * geluRight')}
+    output[global_idx] = valueLeft * geluRight;
   }`;
 
   return {

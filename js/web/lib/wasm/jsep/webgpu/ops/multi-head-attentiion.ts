@@ -18,6 +18,20 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   const pastKey = inputs[6];
   const pastValue = inputs[7];
 
+  // Abbreviation and Meanings:
+  //   B:    batch_size
+  //   S:    sequence_length (input sequence length of query)
+  //   P:    past_sequence_length (past sequence length of key or value)
+  //   L:    kv_sequence_length (input sequence length of key or value)
+  //   M:    max_sequence_length
+  //   T:    total_sequence_length = past_sequence_length + kv_sequence_length
+  //   N:    num_heads
+  //   H:    head size for Q and K, aka q_head_size or k_head_size or qk_head_size
+  //   H_v:  v_head_size
+  //   D_i:  input hidden size
+  //   D:    hidden size for Q and K (D = N * H), aka q_hidden_size or k_hidden_size or qk_hidden_size
+  //   D_v:  v_hidden_size = num_heads * v_head_size
+
   //     key_padding_mask (K/V)     : (B) or (2*B + 1) or (B, L) or None
   //     relative_position_bias     : (B, 1, S, L)
   //     past_key                   : (B, N, S*, H)
@@ -303,7 +317,9 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   const params = validateInputs(context.inputs, attributes);
   console.log('params', params);
   // TODO: write attention implementation that does not need packed weight transpose
+  // applyAttention expects BNSH inputs
   if (context.inputs[0].dims.length === 5) {
+    // transpose QKV from BSN3H to BNS3H
     const Q = context.compute(
         {
           ...transposeProgramMetadata,
@@ -317,10 +333,12 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   }
 
   if (context.inputs[1]?.dims.length === 5) {
+    // transpose Q from BSD (BSNH) to BNSH
     const Q = maybeTransposeToBNSHAndAddBias(
         context, params.batchSize, params.numHeads, params.sequenceLength, params.headSize, context.inputs[0],
         context.inputs[3], 0);
 
+    // transpose KV from BLN2H to BNS2H
     const K = context.compute(
         {
           ...transposeProgramMetadata,

@@ -31,14 +31,17 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
 };
 
 const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
-  const outputShape = inputs[0].dims.slice();
+  const outputShape = inputs[0].dims;
 
   const channels = inputs[0].dims[2];
-  const outputSize = ShapeUtil.size(outputShape);
-  const input = inputVariable('input', inputs[0].dataType, inputs[0].dims);
-  const bias = inputVariable('bias', inputs[0].dataType, [channels]);
-  const residual = inputVariable('residual', inputs[0].dataType, inputs[0].dims);
-  const output = outputVariable('output', inputs[0].dataType, outputShape);
+  // since channel number can be only 320/640/1280, it's always divisable by 4
+  const outputSize = ShapeUtil.size(outputShape) / 4;
+
+  const dataType = inputs[0].dataType;
+  const input = inputVariable('input', dataType, outputShape, 4);
+  const bias = inputVariable('bias', dataType, [channels], 4);
+  const residual = inputVariable('residual', dataType, outputShape, 4);
+  const output = outputVariable('output', dataType, outputShape, 4);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const channels = ${channels}u;
@@ -46,7 +49,7 @@ const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly Te
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let value = ${input.getByOffset('global_idx')} 
+    let value = ${input.getByOffset('global_idx')}
       + ${bias.getByOffset('global_idx % channels')} + ${residual.getByOffset('global_idx')};
     ${output.setByOffset('global_idx', 'value')}
   }`;

@@ -50,7 +50,7 @@ const initOrt = (numThreads: number, loggingLevel: number): void => {
  */
 export const initRuntime = async(env: Env): Promise<void> => {
   // init ORT
-  initOrt(32, logLevelStringToEnum(env.logLevel));
+  initOrt(10, logLevelStringToEnum(env.logLevel));
 
   if (!BUILD_DEFS.DISABLE_WEBGPU) {
     // init JSEP if available
