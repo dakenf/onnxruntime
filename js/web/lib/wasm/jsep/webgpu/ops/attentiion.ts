@@ -270,8 +270,8 @@ const computeAttentionProbs =
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
         // packed QKV in Q, transposed to BNS3H
         kInput = 'q';
-        packedQOffset = `batchIndex * ${parameters.sequenceLength * parameters.numHeads} * 3 * ${parameters.hiddenSize} + headIndex * ${
-            parameters.sequenceLength} * 3 * ${parameters.hiddenSize}`;
+        packedQOffset = `batchIndex * ${parameters.sequenceLength * parameters.numHeads} * 3 * ${
+            parameters.hiddenSize} + headIndex * ${parameters.sequenceLength} * 3 * ${parameters.hiddenSize}`;
         packedKOffset = `${parameters.hiddenSize} + inputOffset`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
         packedKOffset = `batchIndex * ${parameters.vHiddenSize} * 2 + headIndex * ${parameters.vHeadSize}`;

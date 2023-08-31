@@ -271,7 +271,7 @@ export const run = async(
       wasm.jsepOnRunStart?.(sessionId);
 
       // support RunOptions
-      let errorCode = wasm._OrtRun(
+      let errorCode = await wasm._OrtRun(
           sessionHandle, inputNamesOffset, inputValuesOffset, inputCount, outputNamesOffset, outputCount,
           outputValuesOffset, runOptionsHandle);
 

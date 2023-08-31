@@ -4,14 +4,7 @@ import {ShapeUtil} from '../../util';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
-import {
-    applyAttention,
-    AttentionAttrs,
-    AttentionMaskType,
-    AttentionParameters,
-    AttentionQkvFormat,
-    computeInPlaceSoftmax,
-} from './attentiion';
+import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat, computeInPlaceSoftmax,} from './attentiion';
 import {inputVariable, outputVariable, ShaderHelper} from './common';
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
 
@@ -335,35 +328,34 @@ const maybeTransposeToBNSHAndAddBias =
 // };
 
 const fillVector = (components?: number) => {
-    if (!components || components === 1) {
-        return 'f32(0)';
-    }
+  if (!components || components === 1) {
+    return 'f32(0)';
+  }
 
-    return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
+  return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
 };
 
 const sumVector = (name: string, components?: number) => {
-    if (components === 4) {
-        return `${name}.x + ${name}.y + ${name}.z + ${name}.w`;
-    } else if (components === 2) {
-        return `${name}.x + ${name}.y`;
-    } else if (components === 3) {
-        return `${name}.x + ${name}.y + ${name}.z`;
-    }
+  if (components === 4) {
+    return `${name}.x + ${name}.y + ${name}.z + ${name}.w`;
+  } else if (components === 2) {
+    return `${name}.x + ${name}.y`;
+  } else if (components === 3) {
+    return `${name}.x + ${name}.y + ${name}.z`;
+  }
 
-    return name;
+  return name;
 };
 
 const computeAttentionProbsBSN3H =
     (context: ComputeContext, q: TensorView, key: TensorView, bias: TensorView|undefined,
      parameters: AttentionParameters, attributes: AttentionAttrs) => {
       const probsShape = [
-        parameters.batchSize, parameters.sequenceLength,
-        parameters.numHeads,
+        parameters.batchSize, parameters.sequenceLength, parameters.numHeads,
         parameters.kvSequenceLength + parameters.pastSequenceLength
       ];
 
-      const components = undefined; //getMaxComponents(parameters.headSize);
+      const components = undefined;  // getMaxComponents(parameters.headSize);
       const qInput = inputVariable('q', q.dataType, q.dims, components);
       const output = outputVariable('output', q.dataType, probsShape);
 
@@ -434,21 +426,21 @@ const computeAttentionProbsBSN3H =
     };
 
 const computeVxAttentionScoreBSN3H = (probs: TensorView, qkv: TensorView, params: AttentionParameters) => {
-    const attentionScoreMatMulProgramData = {
-        name: 'computeVxAttentionScore',
-        inputTypes: [GpuDataType.default, GpuDataType.default],
-        cacheHint: JSON.stringify(params),
-    };
+  const attentionScoreMatMulProgramData = {
+    name: 'computeVxAttentionScore',
+    inputTypes: [GpuDataType.default, GpuDataType.default],
+    cacheHint: JSON.stringify(params),
+  };
 
-    const outputShape = [params.batchSize, params.sequenceLength, params.numHeads, params.vHeadSize];
-    const outputSize = ShapeUtil.size(outputShape);
+  const outputShape = [params.batchSize, params.sequenceLength, params.numHeads, params.vHeadSize];
+  const outputSize = ShapeUtil.size(outputShape);
 
-    const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
-    const qkvHelper = inputVariable('qkv', qkv.dataType, qkv.dims);
-    const output = outputVariable('output', probs.dataType, outputShape);
+  const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
+  const qkvHelper = inputVariable('qkv', qkv.dataType, qkv.dims);
+  const output = outputVariable('output', probs.dataType, outputShape);
 
-    const dataType = 'f32';
-    const getShaderSource = (shaderHelper: ShaderHelper) => `
+  const dataType = 'f32';
+  const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
   const K: u32 = ${params.totalSequenceLength}u;
@@ -477,12 +469,12 @@ const computeVxAttentionScoreBSN3H = (probs: TensorView, qkv: TensorView, params
     }
     output[global_idx] = f32(offsetA);
   }`;
-    return {
-        ...attentionScoreMatMulProgramData,
-        outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-        getShaderSource,
-        dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-    };
+  return {
+    ...attentionScoreMatMulProgramData,
+    outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+    getShaderSource,
+    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+  };
 };
 
 export const applyPackedAttention =
@@ -524,9 +516,8 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   if (context.inputs[0].dims.length === 5) {
     // transpose QKV from BSN3H to BNS3H
     return applyPackedAttention(
-        context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4],
-        undefined, context.inputs[6],
-        context.inputs[7], context.inputs[5], params, attributes);
+        context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
+        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
   }
 
   if (context.inputs[1]?.dims.length === 5) {
