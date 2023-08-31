@@ -203,7 +203,7 @@ export const parseAttentionAttributes = (attributes: AttentionAttrs): AttentionA
 
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
 
-const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, N: number, D: number) => {
+export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, N: number, D: number) => {
   const dataType = 'f32';
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
@@ -270,9 +270,9 @@ const computeAttentionProbs =
       if (parameters.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
         // packed QKV in Q, transposed to BNS3H
         kInput = 'q';
-        packedQOffset = `batchIndex * ${parameters.sequenceLength} * 3 * ${parameters.headSize} + headIndex * ${
-            parameters.sequenceLength}`;
-        packedKOffset = `${parameters.headSize} + inputOffset`;
+        packedQOffset = `batchIndex * ${parameters.sequenceLength * parameters.numHeads} * 3 * ${parameters.hiddenSize} + headIndex * ${
+            parameters.sequenceLength} * 3 * ${parameters.hiddenSize}`;
+        packedKOffset = `${parameters.hiddenSize} + inputOffset`;
       } else if (parameters.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
         packedKOffset = `batchIndex * ${parameters.vHiddenSize} * 2 + headIndex * ${parameters.vHeadSize}`;
       }
