@@ -19,7 +19,7 @@ import {tensorDataTypeStringToEnum} from '../lib/wasm/wasm-common';
 import {base64toBuffer, createMockGraph, readFile} from './test-shared';
 import {Test} from './test-types';
 
-// import {onnxruntimeBackend, listSupportedBackends} from '../../node/lib/backend';
+// import {listSupportedBackends, onnxruntimeBackend} from '../../node/lib/backend';
 // const backends = listSupportedBackends();
 // for (const backend of backends) {
 //   ort.registerBackend(backend.name, onnxruntimeBackend, 100);
