@@ -80,7 +80,7 @@ export const createSessionAllocate = (model: Uint8Array, weights?: ArrayBuffer):
   let weightsFile: FSNode|undefined;
   if (weights) {
     weightsFile = wasm.FS.create('/home/web_user/weights.pb');
-    weightsFile.contents = weights;
+    weightsFile.contents = new Uint8Array(weights);
     weightsFile.usedBytes = weights.byteLength;
     wasm.FS.chdir('/home/web_user');
   }
