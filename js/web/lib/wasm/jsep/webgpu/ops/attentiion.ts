@@ -487,12 +487,13 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     let qkvIndex = global_idx % 3;
     let N: u32 = headSizes[qkvIndex];
     let gemmSize = M * N;
-    let idxWoGemmSize = global_idx / gemmSize;
-    let batchIndex = idxWoGemmSize / numHeads / 3;
-    let headIndex = (idxWoGemmSize / 3) % numHeads;
+    let idxWoGemmSize = global_idx / 3 / gemmSize;
+    let batchIndex = idxWoGemmSize / numHeads;
+    let headIndex = idxWoGemmSize % numHeads;
 
     let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
 
+    let batchWeigthsOffset = batchIndex * ${parameters.sequenceLength * parameters.hiddenSize * 3};
     let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * (headSizes[qkvIndex]);
     let weightsOffset = biasOffset;
 
@@ -505,8 +506,8 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans
-      value += input[global_idx / 3 + k] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}
-       + headIndex * headSizes[qkvIndex]];
+      value += input[m * K + k + inputOffset] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}
+       + headIndex * headSizes[qkvIndex] + n];
     }
 
     value += bias[gemmOffset % headSizes[qkvIndex] + biasOffset];
