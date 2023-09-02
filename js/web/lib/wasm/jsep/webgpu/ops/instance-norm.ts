@@ -7,7 +7,14 @@ import {ShapeUtil} from '../../util';
 import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {ShaderHelper, inputVariable, tensorTypeToWsglStorageType, outputVariable} from './common';
+import {
+  ShaderHelper,
+  inputVariable,
+  tensorTypeToWsglStorageType,
+  outputVariable,
+  getMaxComponents,
+  fillVector
+} from './common'
 
 export interface InstanceNormAttributes extends AttributeWithCacheKey {
   epsilon: number;
@@ -78,25 +85,6 @@ const createInstanceNormProgramInfo =
         dispatchGroup: () => ({x: Math.ceil(normCount / 64 /* workgroup size */)})
       };
     };
-
-const getMaxComponents = (size: number) => {
-  // we cannot use vec3 type since it has alignment of 16 bytes
-  if (size % 4 === 0) {
-    return 4;
-  } else if (size % 2 === 0) {
-    return 2;
-  }
-
-  return 1;
-};
-
-const fillVector = (components?: number) => {
-  if (!components || components === 1) {
-    return 'f32(0)';
-  }
-
-  return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
-};
 
 const computeMean = (context: ComputeContext, input: TensorView, scale: TensorView, bias: TensorView, n: number, h: number, c: number, epsilon: number) => {
   const components = getMaxComponents(c);

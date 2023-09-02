@@ -235,14 +235,34 @@ export const tensorTypeToWsglValueType = (type: DataType, components: 1|2|3|4 = 
 };
 
 export const getMaxComponents = (size: number) => {
+  // we cannot use vec3 type since it has alignment of 16 bytes
   if (size % 4 === 0) {
     return 4;
-  } else if (size % 3 === 0) {
-    return 3;
   } else if (size % 2 === 0) {
     return 2;
   }
+
   return 1;
+};
+
+export const fillVector = (components?: number) => {
+  if (!components || components === 1) {
+    return 'f32(0)';
+  }
+
+  return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
+};
+
+export const sumVector = (name: string, components?: number) => {
+  if (components === 4) {
+    return `(${name}.x + ${name}.y + ${name}.z + ${name}.w)`;
+  } else if (components === 2) {
+    return `(${name}.x + ${name}.y)`;
+  } else if (components === 3) {
+    return `(${name}.x + ${name}.y + ${name}.z)`;
+  }
+
+  return name;
 };
 
 /**

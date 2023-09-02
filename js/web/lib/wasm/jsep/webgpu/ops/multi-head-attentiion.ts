@@ -5,7 +5,7 @@ import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
 import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat, computeInPlaceSoftmax,} from './attentiion';
-import {inputVariable, outputVariable, ShaderHelper} from './common';
+import { inputVariable, outputVariable, ShaderHelper, sumVector } from './common'
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
@@ -329,18 +329,6 @@ const fillVector = (components?: number) => {
   return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
 };
 
-const sumVector = (name: string, components?: number) => {
-  if (components === 4) {
-    return `${name}.x + ${name}.y + ${name}.z + ${name}.w`;
-  } else if (components === 2) {
-    return `${name}.x + ${name}.y`;
-  } else if (components === 3) {
-    return `${name}.x + ${name}.y + ${name}.z`;
-  }
-
-  return name;
-};
-
 const computeAttentionProbsBSN3H =
     (context: ComputeContext, q: TensorView, key: TensorView, bias: TensorView|undefined,
      parameters: AttentionParameters, attributes: AttentionAttrs) => {
@@ -504,8 +492,6 @@ export const applyPackedAttention =
 
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
-  console.log('params', params);
-  // TODO: write attention implementation that does not need packed weight transpose
 
   if (context.inputs[0].dims.length === 5) {
     // transpose QKV from BSN3H to BNS3H
@@ -550,7 +536,7 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   const K = maybeTransposeToBNSHAndAddBias(
       context, params.batchSize, params.numHeads, params.kvSequenceLength, params.headSize, context.inputs[1],
       context.inputs[3], params.hiddenSize);
-  console.log('KKKKKKK');
+
   const V = maybeTransposeToBNSHAndAddBias(
       context, params.batchSize, params.numHeads, params.kvSequenceLength, params.vHeadSize, context.inputs[2],
       context.inputs[3], 2 * params.hiddenSize);
