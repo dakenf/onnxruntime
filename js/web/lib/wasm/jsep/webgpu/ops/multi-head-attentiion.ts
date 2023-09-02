@@ -131,7 +131,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     }
 
     if (value) {
-      if (query.dims.length === 5 && query.dims[3] == 2) {
+      if (query.dims.length === 5 && query.dims[3] === 2) {
         throw new Error('bias is not allowed for packed kv.');
       }
     }
@@ -242,7 +242,7 @@ const addBiasTranspose =
       const addBiasTransposeMetadata = {
         name: 'addBiasTranspose',
         inputTypes: [GpuDataType.default, GpuDataType.default],
-        cacheHint: JSON.stringify({batchSize, sequenceLength, hiddenSize}),
+        cacheHint: JSON.stringify({batchSize, sequenceLength, hiddenSize, biasOffset}),
       };
 
       const outputShape = [batchSize, sequenceLength, hiddenSize];
@@ -263,12 +263,6 @@ const addBiasTranspose =
 
     qkv_with_bias[global_idx] = qkv[global_idx] + bias[biasOffsetIdx];
   }`;
-      // return {
-      //   ...addBiasTransposeMetadata,
-      //   outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-      //   getShaderSource,
-      //   dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-      // };
 
       return context.compute(
           {
@@ -303,11 +297,11 @@ const maybeTransposeToBNSHAndAddBias =
         } else {
           reshapedInput =
               addBiasTranspose(context, input, bias, batchSize, sequenceLength, numHeads * headSize, biasOffset!);
-          reshapedInput = input.reshape([batchSize, sequenceLength, numHeads, headSize]);
+          reshapedInput = reshapedInput.reshape([batchSize, sequenceLength, numHeads, headSize]);
           return context.compute(
               {
                 ...transposeProgramMetadata,
-                cacheHint: weightTransposeAttribute.cacheKey,
+                cacheHint: weightTransposeAttribute.cacheKey + biasOffset!.toString() + Math.random().toString(10),
                 get: () => createTransposeProgramInfo(reshapedInput, weightTransposeAttribute.perm)
               },
               {inputs: [reshapedInput], outputs: [-1]})[0];
@@ -556,6 +550,7 @@ export const multiHeadAttention = (context: ComputeContext, attributes: Attentio
   const K = maybeTransposeToBNSHAndAddBias(
       context, params.batchSize, params.numHeads, params.kvSequenceLength, params.headSize, context.inputs[1],
       context.inputs[3], params.hiddenSize);
+  console.log('KKKKKKK');
   const V = maybeTransposeToBNSHAndAddBias(
       context, params.batchSize, params.numHeads, params.kvSequenceLength, params.vHeadSize, context.inputs[2],
       context.inputs[3], 2 * params.hiddenSize);
