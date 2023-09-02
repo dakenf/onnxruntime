@@ -382,7 +382,7 @@ const computeAttentionProbsBSN3H =
       value += q[k + qOffset] * q[k + kOffset];
     }
 
-    let sum = ${sumVector('value', components)} * alpha;
+    let sum = ${sumVector('value', components!)} * alpha;
     // value += beta * output[global_id.x]; // no mask
     output[global_idx] = sum;
   }`;

@@ -245,15 +245,15 @@ export const getMaxComponents = (size: number) => {
   return 1;
 };
 
-export const fillVector = (components?: number) => {
+export const fillVector = (components?: number, value = '0') => {
   if (!components || components === 1) {
-    return 'f32(0)';
+    return `f32(${value})`;
   }
 
-  return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
+  return `vec${components}<f32>(${new Array(components).fill(value).join(',')})`;
 };
 
-export const sumVector = (name: string, components?: number) => {
+export const sumVector = (name: string, components: number) => {
   if (components === 4) {
     return `(${name}.x + ${name}.y + ${name}.z + ${name}.w)`;
   } else if (components === 2) {

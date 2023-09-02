@@ -207,39 +207,46 @@ export const parseAttentionAttributes = (attributes: AttentionAttrs): AttentionA
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
 
 export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, N: number, D: number) => {
-  const dataType = 'f32';
+  const components = getMaxComponents(D);
+  const inputHelper = outputVariable('x', input.dataType, input.dims, components);
 
+  let threadMaxValue = 'threadMaxVector';
+  if (components === 2) {
+    threadMaxValue = 'max(threadMaxVector.x, threadMaxVector.y)';
+  } else if (components === 4) {
+    threadMaxValue = 'max(max(threadMaxVector.x, threadMaxVector.y), max(threadMaxVector.z, threadMaxVector.w))';
+  }
   const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const dInv = 1 / ${D};
-  @group(0) @binding(0) var<storage, read_write> x: array<${dataType}>;
-
+  const dInv: f32 = 1 / ${D};
+  const dComp = ${D / components};
+  ${shaderHelper.declareVariables(inputHelper)}
   ${shaderHelper.mainStart()}
-    if (global_idx >= ${N}) {
-      return;
-    }
-    let offset: u32 = global_id.x * ${D};
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(N)}
+    let offset: u32 = global_idx * dComp;
 
-    var threadMax = -3.402823e+38f; // 6.2.4 in wgsl spec
-    for (var i: u32 = 0; i < ${D}; i++) {
-      threadMax = max(x[offset + i], threadMax);
+    var threadMaxVector = ${fillVector(components, '-3.402823e+38f')}; // 6.2.4 in wgsl spec
+    for (var i: u32 = 0; i < dComp; i++) {
+      threadMaxVector = max(x[offset + i], threadMaxVector);
     }
+    let threadMax: f32 = ${threadMaxValue};
 
-    for (var i: u32 = 0; i < ${D}; i++) {
-      let val: f32 = x[offset + i] - threadMax;
+    for (var i: u32 = 0; i < dComp; i++) {
+      let val = x[offset + i] - threadMax;
       x[offset + i] = exp(val);
     }
 
-    var sum: f32 = 0.0;
-    for (var i: u32 = 0; i < ${D}; i++) {
-      sum += x[offset + i];
+    var sumVector = ${fillVector(components, '0')};
+    for (var i: u32 = 0; i < dComp; i++) {
+      sumVector += x[offset + i];
     }
+    let sum = ${sumVector('sumVector', components)};
 
     if (sum == 0) {
-      for (var i: u32 = 0; i < ${D}; i++) {
-        x[offset + i] = dInv;
+      for (var i: u32 = 0; i < dComp; i++) {
+        x[offset + i] = ${fillVector(components, 'dInv')};
       }
     } else {
-      for (var i: u32 = 0; i < ${D}; i++) {
+      for (var i: u32 = 0; i < dComp; i++) {
         x[offset + i] = x[offset + i] / sum;
       }
     }
