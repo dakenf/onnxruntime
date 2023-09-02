@@ -234,6 +234,17 @@ export const tensorTypeToWsglValueType = (type: DataType, components: 1|2|3|4 = 
   return typeof mappedType === 'string' ? mappedType : mappedType[1];
 };
 
+export const getMaxComponents = (size: number) => {
+  if (size % 4 === 0) {
+    return 4;
+  } else if (size % 3 === 0) {
+    return 3;
+  } else if (size % 2 === 0) {
+    return 2;
+  }
+  return 1;
+};
+
 /**
  * A helper function to get a IndicesHelper for a given input or output.
  *

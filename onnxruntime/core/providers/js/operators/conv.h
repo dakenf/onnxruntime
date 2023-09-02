@@ -9,7 +9,7 @@
 namespace onnxruntime {
 namespace js {
 
-template <typename T, bool is_channels_last>
+template <typename T, bool is_channels_last, bool is_weights_channels_last>
 class Conv : public JsKernel {
  public:
   Conv(const OpKernelInfo& info) : JsKernel(info), conv_attrs_(info), w_is_const_(false) {
@@ -19,6 +19,7 @@ class Conv : public JsKernel {
     }
 
     int64_t channels_last = is_channels_last ? 1 : info.GetAttrOrDefault<int64_t>("channels_last", 0);
+    int32_t weights_channels_last = is_weights_channels_last ? 1 : 0;
 
     // currently only support Conv 1D/2D. TODO: support Conv3D and other
     if (conv_attrs_.dilations.size() == 1 ||
@@ -26,13 +27,14 @@ class Conv : public JsKernel {
         conv_attrs_.strides.size() == 1) {
       JSEP_INIT_KERNEL_ATTRIBUTE(Conv, ({
                                    "format" : $8 ? "NHWC" : "NCHW",
+                                   "weightsFormat" : $9 ? "NHWC" : "NCHW",
                                    "auto_pad" : $1,
                                    "dilations" : [$2],
                                    "group" : $3,
                                    "kernel_shape" : [$4],
                                    "pads" : [ $5, $6 ],
                                    "strides" : [$7],
-                                   "w_is_const" : () JS_ARROW(!!HEAP8[Number($9)])
+                                   "w_is_const" : () JS_ARROW(!!HEAP8[Number($10)])
                                  }),
                                  static_cast<int32_t>(conv_attrs_.auto_pad),
                                  static_cast<int32_t>(conv_attrs_.dilations.size() > 0 ? conv_attrs_.dilations[0] : 0),
@@ -42,17 +44,19 @@ class Conv : public JsKernel {
                                  static_cast<int32_t>(conv_attrs_.pads.size() > 1 ? conv_attrs_.pads[1] : 0),
                                  static_cast<int32_t>(conv_attrs_.strides.size() > 0 ? conv_attrs_.strides[0] : 0),
                                  static_cast<int32_t>(channels_last),
+                                 static_cast<int32_t>(is_weights_channels_last),
                                  reinterpret_cast<uintptr_t>(&w_is_const_));
     } else {
       JSEP_INIT_KERNEL_ATTRIBUTE(Conv, ({
                                    "format" : $13 ? "NHWC" : "NCHW",
+                                   "weightsFormat" : $14 ? "NHWC" : "NCHW",
                                    "auto_pad" : $1,
                                    "dilations" : [ $2, $3 ],
                                    "group" : $4,
                                    "kernel_shape" : [ $5, $6 ],
                                    "pads" : [ $7, $8, $9, $10 ],
                                    "strides" : [ $11, $12 ],
-                                   "w_is_const" : () JS_ARROW(!!HEAP8[Number($14)])
+                                   "w_is_const" : () JS_ARROW(!!HEAP8[Number($15)])
                                  }),
                                  static_cast<int32_t>(conv_attrs_.auto_pad),
                                  static_cast<int32_t>(conv_attrs_.dilations.size() > 0 ? conv_attrs_.dilations[0] : 0),
@@ -67,6 +71,7 @@ class Conv : public JsKernel {
                                  static_cast<int32_t>(conv_attrs_.strides.size() > 0 ? conv_attrs_.strides[0] : 0),
                                  static_cast<int32_t>(conv_attrs_.strides.size() > 1 ? conv_attrs_.strides[1] : 0),
                                  static_cast<int32_t>(channels_last),
+                                 static_cast<int32_t>(is_weights_channels_last),
                                  reinterpret_cast<uintptr_t>(&w_is_const_));
     }
   }

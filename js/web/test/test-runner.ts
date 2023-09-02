@@ -721,8 +721,6 @@ export class ProtoOpTestContext {
     this.backendHint = test.backend!;
     this.loadedData = onnx.ModelProto.encode(model).finish();
 
-    console.log('HINT', this.backendHint);
-
     // in debug mode, open a new tab in browser for the generated onnx model.
     if (ort.env.debug) {
       const modelFile =
@@ -737,7 +735,6 @@ export class ProtoOpTestContext {
     }
   }
   async init(): Promise<void> {
-    console.log('CREATE!!!');
     this.session = await ort.InferenceSession.create(
         this.loadedData, {executionProviders: [this.backendHint], ...this.sessionOptions});
   }

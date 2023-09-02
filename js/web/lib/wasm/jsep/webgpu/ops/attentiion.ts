@@ -346,7 +346,7 @@ const computeAttentionProbs =
       const probs = context.compute(
           {
             name: 'computeAttentionProbs',
-            cacheHint: '0',
+            cacheHint: JSON.stringify(parameters),
             inputTypes,
             outputs: [{dims: probsShape, dataType: q.dataType, gpuDataType: GpuDataType.default}],
             getShaderSource,
@@ -457,6 +457,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   ];
   // TODO: handle mask
 
+  console.log('params', parameters);
   // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
   const gemmSize = parameters.sequenceLength * parameters.hiddenSize;
   const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads * 3;
@@ -490,10 +491,6 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     let batchIndex = idxWoGemmSize / numHeads / 3;
     let headIndex = (idxWoGemmSize / 3) % numHeads;
 
-    if (batchIndex >= batchSize) {
-        return;
-    }
-
     let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
 
     let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * (headSizes[qkvIndex]);
@@ -508,17 +505,17 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans
-      value += input[m * K + k + inputOffset] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}
+      value += input[global_idx / 3 + k] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}
        + headIndex * headSizes[qkvIndex]];
     }
 
     value += bias[gemmOffset % headSizes[qkvIndex] + biasOffset];
     if (qkvIndex == 0) {
-      outputQ[gemmOffset + outputOffset] = value;
+      outputQ[global_idx / 3] = value;
     } else if (qkvIndex == 1) {
-      outputK[gemmOffset + outputOffset] = value;
+      outputK[global_idx / 3] = value;
     } else if (qkvIndex == 2) {
-      outputV[gemmOffset + outputOffset] = value;
+      outputV[global_idx / 3] = value;
     }
   }`;
 

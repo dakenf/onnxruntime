@@ -17,7 +17,7 @@ namespace js {
       T,                                                                                   \
       kJsExecutionProvider,                                                                \
       (*KernelDefBuilder::Create()).TypeConstraint("T", DataTypeImpl::GetTensorType<T>()), \
-      Conv<T, true>);                                                                      \
+      Conv<T, true, false>);                                                                      \
   ONNX_OPERATOR_TYPED_KERNEL_EX(                                                           \
       Conv,                                                                                \
       kOnnxDomain,                                                                         \
@@ -25,7 +25,7 @@ namespace js {
       T,                                                                                   \
       kJsExecutionProvider,                                                                \
       (*KernelDefBuilder::Create()).TypeConstraint("T", DataTypeImpl::GetTensorType<T>()), \
-      Conv<T, false>);                                                                     \
+      Conv<T, false, false>);                                                                     \
   ONNX_OPERATOR_VERSIONED_TYPED_KERNEL_EX(                                                 \
       Conv,                                                                                \
       kOnnxDomain,                                                                         \
@@ -33,7 +33,7 @@ namespace js {
       T,                                                                                   \
       kJsExecutionProvider,                                                                \
       (*KernelDefBuilder::Create()).TypeConstraint("T", DataTypeImpl::GetTensorType<T>()), \
-      Conv<T, false>);
+      Conv<T, false, false>);
 
 REGISTER_KERNEL_TYPED(float)
 
