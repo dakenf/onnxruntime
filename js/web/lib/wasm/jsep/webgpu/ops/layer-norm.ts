@@ -39,7 +39,6 @@ const createLayerNormProgramInfo =
           const bias = inputs[2];
 
           const outputShape = xShape;
-          const outputSize = ShapeUtil.size(outputShape);
           const axis = ShapeUtil.normalizeAxis(attributes.axis, xShape.length);
           const normCount = ShapeUtil.sizeToDimension(xShape, axis);
           const normSize = ShapeUtil.sizeFromDimension(xShape, axis);
@@ -89,14 +88,14 @@ const createLayerNormProgramInfo =
 
   ${shaderHelper.declareVariables(...variables)}
   ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize / components)}
+    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(normCount)}
     let offset = global_idx * normSize;
     var meanVector = ${fillVector(components)};
     var meanSquareVector = ${fillVector(components)};
 
     for (var h: u32 = 0u; h < normSize; h++) {
-      meanVector = meanVector + x[h + offset];
-      meanSquareVector = meanSquareVector + x[h + offset] * x[h + offset];
+      meanVector += x[h + offset];
+      meanSquareVector += x[h + offset] * x[h + offset];
     }
     let mean = ${sumVector('meanVector', components)} / normSizeTyped;
     let meanSquare = sqrt(${sumVector('meanSquareVector', components)} / normSizeTyped - mean * mean + epsilon);
@@ -124,7 +123,7 @@ const createLayerNormProgramInfo =
             ...metadata,
             outputs,
             getShaderSource,
-            dispatchGroup: () => ({x: Math.ceil(normCount / components / 64 /* workgroup size */)})
+            dispatchGroup: () => ({x: Math.ceil(normCount / 64 /* workgroup size */)})
           };
         };
 

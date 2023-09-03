@@ -119,14 +119,14 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
     let offset = currentImageNumber * imageSize;
     var mean: ${inputHelper.type.storage} = ${fillVector(components)};
     for (var i: u32 = 0u; i < H; i++) {
-        mean = mean + input[offset + i * C + currentChannelNumber];
+        mean += input[offset + i * C + currentChannelNumber];
     }
     mean = mean / f32(H);
 
     var squaredNorm: ${inputHelper.type.storage} = ${fillVector(components)};
     for (var i: u32 = 0u; i < H; i++) {
         let deviation = input[offset + i * C + currentChannelNumber] - mean;
-        squaredNorm = squaredNorm + deviation * deviation;
+        squaredNorm = fma(deviation, deviation, squaredNorm);
     }
     let invStdDev = 1 / sqrt(squaredNorm / f32(H) + epsilon);
     let channelScale = invStdDev * scale[currentChannelNumber];
@@ -182,7 +182,7 @@ const createInstanceNormNHWCProgramInfo =
 
     let scaleOffset = currentImageNumber * C + currentChannelNumber;
     let scale = scaleInput[scaleOffset];
-    output[global_idx] = input[global_idx] * scale[0] + scale[1];
+    output[global_idx] = fma(input[global_idx], scale[0], scale[1]);
   }`;
       context.compute({
         ...metadata,

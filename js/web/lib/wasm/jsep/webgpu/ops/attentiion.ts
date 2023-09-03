@@ -315,14 +315,14 @@ const computeAttentionProbs =
     let m = gemmOffset / N;
     let n = gemmOffset % N;
 
-    var value: ${qInput.type.storage} = ${fillVector(components)};
+    var value = ${dataType}(0);
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans a + trans b
-      value += q[m * K + k + inputOffset] * key[n * K + k + kOffset];
+      value += ${components > 1 ? 'dot(q[m * K + k + inputOffset], key[n * K + k + kOffset])' 
+      : 'q[m * K + k + inputOffset] * key[n * K + k + kOffset]'};
     }
-    let sum = ${sumVector('value', components)} * alpha;
     // value += beta * output[global_id.x]; // no mask
-    output[global_idx] = sum;
+    output[global_idx] = value * alpha;
   }`;
 
     const inputTypes = inputs.map(_ => GpuDataType.default);
@@ -345,15 +345,13 @@ const computeAttentionProbs =
     return probs;
   };
 
-const computeVxAttentionScore = (params: AttentionParameters) => {
-  const attentionScoreMatMulProgramData = {
-    name: 'computeVxAttentionScore',
-    inputTypes: [GpuDataType.default, GpuDataType.default],
-    cacheHint: JSON.stringify(params),
-  };
-
+const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: TensorView, params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
+
+  const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
+  const vHelper = inputVariable('v', v.dataType, v.dims);
+  const output = outputVariable('output', probs.dataType, outputShape);
 
   const dataType = 'f32';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
@@ -362,9 +360,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   const K: u32 = ${params.totalSequenceLength}u;
   const numHeads: u32 = ${params.numHeads}u;
 
-  @group(0) @binding(0) var<storage, read> probs : array<${dataType}>;
-  @group(0) @binding(1) var<storage, read> v : array<${dataType}>;
-  @group(0) @binding(2) var<storage, read_write> output : array<${dataType}>;
+  ${shaderHelper.declareVariables(probsHelper, vHelper, output)}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
@@ -383,12 +379,17 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
     }
     output[global_idx] = value;
   }`;
-  return {
-    ...attentionScoreMatMulProgramData,
-    outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-    getShaderSource,
-    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-  };
+
+  return context.compute(
+    {
+      name: 'AttentionScore',
+      inputTypes: [GpuDataType.default, GpuDataType.default],
+      cacheHint: JSON.stringify(params),
+      outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+      getShaderSource,
+      dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+    },
+    {inputs: [probs, v], outputs: [-1]})[0];
 };
 
 export const applyAttention =
@@ -397,19 +398,7 @@ export const applyAttention =
     relativePositionBias: TensorView|undefined, parameters: AttentionParameters, attributes: AttentionAttrs) => {
     const probs = computeAttentionProbs(context, q, k, relativePositionBias, parameters, attributes);
 
-    const attentionScoreMatMulProgramData = {
-      name: 'AttentionScore',
-      inputTypes: [GpuDataType.default, GpuDataType.default],
-      cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
-    };
-
-    const attentionResult = context.compute(
-      {
-        ...attentionScoreMatMulProgramData,
-        cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
-        get: () => computeVxAttentionScore(parameters)
-      },
-      {inputs: [probs, v || q], outputs: [-1]})[0];
+    const attentionResult = computeVxAttentionScore(context, probs, v, parameters);
 
     context.compute(
       {
