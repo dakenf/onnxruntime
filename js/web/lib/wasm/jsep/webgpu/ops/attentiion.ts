@@ -355,16 +355,6 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
   const outputSize = ShapeUtil.size(outputShape);
 
-  let packedVOffset = 'stack * (K * N) + n';
-  // weights are already transposed to BNS* so we are just checking if they are packed
-  if (params.qkvFormat === AttentionQkvFormat.QKV_BSN3H) {
-    // packed QKV in Q, transposed to BNS3H
-    packedVOffset = `n + batchIndex * ${params.sequenceLength} * 3 * ${params.headSize} + headIndex * ${
-      params.sequenceLength} + ${params.headSize} * 2`;
-  } else if (params.qkvFormat === AttentionQkvFormat.Q_KV_BSNH_BSN2H) {
-    packedVOffset = `stack * (K * N) + n + ${params.vHiddenSize}`;
-  }
-
   const dataType = 'f32';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
@@ -385,7 +375,7 @@ const computeVxAttentionScore = (params: AttentionParameters) => {
     let headIndex = stack % numHeads;
 
     let offsetA = stack * (M * K) + m * K;
-    let offsetB = ${packedVOffset};
+    let offsetB = stack * (K * N) + n;
 
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<K; k++) {
@@ -454,8 +444,6 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const K: u32 = ${K}u;
   const numHeads: u32 = ${parameters.numHeads};
   const headSizes = array<u32, 3>(${parameters.headSize}, ${parameters.headSize}, ${parameters.vHeadSize});
-  const batchSize: u32 = ${parameters.batchSize};
-  // const gemmSize: u32 = ${gemmSize};
   const ldb = ${parameters.hiddenSize + parameters.hiddenSize + parameters.vHiddenSize}u;
 
   @group(0) @binding(0) var<storage, read> input: array<${dataType}>;
@@ -468,38 +456,33 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
     let qkvIndex = global_idx % 3;
+    let globalIdxDiv3 = global_idx / 3;
     let N: u32 = headSizes[qkvIndex];
     let gemmSize = M * N;
-    let idxWoGemmSize = global_idx / 3 / gemmSize;
+    let idxWoGemmSize = globalIdxDiv3 / gemmSize;
     let batchIndex = idxWoGemmSize / numHeads;
     let headIndex = idxWoGemmSize % numHeads;
 
     let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
+    let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * headSizes[qkvIndex];
 
-    let batchWeigthsOffset = batchIndex * ${parameters.sequenceLength * parameters.hiddenSize * 3};
-    let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * (headSizes[qkvIndex]);
-    let weightsOffset = biasOffset;
-
-    let outputOffset = (batchIndex * numHeads + headIndex) * (${parameters.sequenceLength} * headSizes[qkvIndex]);
-
-    let gemmOffset = (global_idx / 3) % gemmSize;
+    let gemmOffset = globalIdxDiv3 % gemmSize;
     let m = gemmOffset / N;
     let n = gemmOffset % N;
 
     var value = ${dataType}(0);
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans
-      value += input[m * K + k + inputOffset] * weight[k * ldb + qkvIndex * ${parameters.hiddenSize}
-       + headIndex * headSizes[qkvIndex] + n];
+      value += input[m * K + k + inputOffset] * weight[k * ldb + biasOffset + n];
     }
 
     value += bias[gemmOffset % headSizes[qkvIndex] + biasOffset];
     if (qkvIndex == 0) {
-      outputQ[global_idx / 3] = value;
+      outputQ[globalIdxDiv3] = value;
     } else if (qkvIndex == 1) {
-      outputK[global_idx / 3] = value;
+      outputK[globalIdxDiv3] = value;
     } else if (qkvIndex == 2) {
-      outputV[global_idx / 3] = value;
+      outputV[globalIdxDiv3] = value;
     }
   }`;
 
