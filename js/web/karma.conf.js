@@ -100,7 +100,8 @@ module.exports = function(config) {
         flags: [
           '--remote-debugging-port=9333', '--enable-features=SharedArrayBuffer',
           '--enable-experimental-web-platform-features',
-          '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'
+          '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64',
+          '--enable-dawn-features=allow_unsafe_apis'
         ],
         chromeFlags: [
           '--experimental-wasm-memory64', '--experimental-wasm-stack-switching', '--experimental-wasm-type-reflection',
@@ -111,7 +112,8 @@ module.exports = function(config) {
         base: 'ChromeCanary',
         flags: [
           '--enable-features=SharedArrayBuffer', '--enable-experimental-web-platform-features',
-          '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64'
+          '--js-flags=--experimental-wasm-type-reflection --experimental-wasm-stack-switching --experimental-wasm-memory64',
+          '--enable-dawn-features=allow_unsafe_apis'
         ],
         chromeFlags: [
           '--experimental-wasm-memory64', '--experimental-wasm-stack-switching', '--experimental-wasm-type-reflection',
@@ -129,7 +131,7 @@ module.exports = function(config) {
       ChromeWebGpuProfileTest: {
         base: 'ChromeCanary',
         flags:
-            ['--window-size=1,1', '--enable-features=SharedArrayBuffer', '--disable-dawn-features=disallow_unsafe_apis']
+            ['--window-size=1,1', '--enable-features=SharedArrayBuffer', '--enable-dawn-features=allow_unsafe_apis']
       },
       ChromeWebGpuProfileDebug: {
         debug: true,
@@ -137,7 +139,7 @@ module.exports = function(config) {
         flags: [
           '--remote-debugging-port=9333',
           '--enable-features=SharedArrayBuffer',
-          '--disable-dawn-features=disallow_unsafe_apis',
+          '--enable-dawn-features=allow_unsafe_apis',
         ]
       },
       //

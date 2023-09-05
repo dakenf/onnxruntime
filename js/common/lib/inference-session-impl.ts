@@ -185,7 +185,7 @@ export class InferenceSession implements InferenceSessionInterface {
     } else if (Array.isArray(arg0)) {
       if (typeof arg0[0] === 'string' && typeof arg0[1] === 'string') {
         filePathOrUint8Array = arg0 as [string, string];
-      } else if (arg0[0] instanceof Uint8Array && arg0[1] instanceof Uint8Array) {
+      } else if (arg0[0] instanceof Uint8Array && arg0[1] instanceof ArrayBuffer) {
         filePathOrUint8Array = arg0 as [Uint8Array, ArrayBufferLike];
       } else {
         throw new TypeError(

@@ -2,10 +2,13 @@
 // Licensed under the MIT License.
 
 #include "multi_head_attention.h"
+#include "core/providers/js/js_data_types.h"
 
 namespace onnxruntime {
 namespace contrib {
 namespace js {
+
+using onnxruntime::js::JsepSupportedFloatTypes;
 
 ONNX_OPERATOR_KERNEL_EX(
     MultiHeadAttention,
@@ -13,7 +16,7 @@ ONNX_OPERATOR_KERNEL_EX(
     1,
     kJsExecutionProvider,
     (*KernelDefBuilder::Create())
-        .TypeConstraint("T", DataTypeImpl::GetTensorType<float>()),
+        .TypeConstraint("T", JsepSupportedFloatTypes()),
     MultiHeadAttention);
 
 }  // namespace js

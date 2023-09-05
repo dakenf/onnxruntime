@@ -7,7 +7,15 @@ import {ShapeUtil} from '../../util'
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key'
 import {ComputeContext, GpuDataType} from '../types'
 
-import { fillVector, getMaxComponents, inputVariable, outputVariable, ShaderHelper, sumVector } from './common'
+import {
+  fillVector,
+  getMaxComponents,
+  inputVariable,
+  outputVariable,
+  ShaderHelper,
+  sumVector,
+  tensorTypeToWsglStorageType
+} from './common'
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose'
 
 export enum AttentionQkvFormat {
@@ -216,26 +224,28 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
   } else if (components === 4) {
     threadMaxValue = 'max(max(threadMaxVector.x, threadMaxVector.y), max(threadMaxVector.z, threadMaxVector.w))';
   }
+  const dataType = tensorTypeToWsglStorageType(input.dataType);
+  const threadMaxMinValue = dataType === 'f32' ? '-3.402823e+38f' : '-65504.0h';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const dInv: f32 = 1 / ${D};
+  const dInv: ${dataType} = 1 / ${D};
   const dComp = ${D / components};
   ${shaderHelper.declareVariables(inputHelper)}
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(N)}
     let offset: u32 = global_idx * dComp;
 
-    var threadMaxVector = ${fillVector(components, '-3.402823e+38f')}; // 6.2.4 in wgsl spec
+    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)}; // 6.2.4 in wgsl spec
     for (var i: u32 = 0; i < dComp; i++) {
       threadMaxVector = max(x[offset + i], threadMaxVector);
     }
-    let threadMax: f32 = ${threadMaxValue};
+    let threadMax: ${dataType} = ${threadMaxValue};
 
     for (var i: u32 = 0; i < dComp; i++) {
       let val = x[offset + i] - threadMax;
       x[offset + i] = exp(val);
     }
 
-    var sumVector = ${fillVector(components, '0')};
+    var sumVector = ${fillVector(dataType, components, '0')};
     for (var i: u32 = 0; i < dComp; i++) {
       sumVector += x[offset + i];
     }
@@ -243,7 +253,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
 
     if (sum == 0) {
       for (var i: u32 = 0; i < dComp; i++) {
-        x[offset + i] = ${fillVector(components, 'dInv')};
+        x[offset + i] = ${fillVector(dataType, components, 'dInv')};
       }
     } else {
       for (var i: u32 = 0; i < dComp; i++) {
@@ -276,7 +286,7 @@ const computeAttentionProbs =
     const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
     const gemmSize = parameters.sequenceLength * parameters.totalSequenceLength;
 
-    const dataType = 'f32';
+    const dataType = tensorTypeToWsglStorageType(q.dataType);
 
     const components = getMaxComponents(parameters.headSize);
     const qInput = inputVariable('q', q.dataType, q.dims, components);
@@ -299,7 +309,7 @@ const computeAttentionProbs =
   const batchSize: u32 = ${parameters.batchSize};
   const gemmSize: u32 = ${gemmSize};
   const alpha = ${dataType}(${alpha});
-  const beta = 1.0;
+  const beta: ${dataType} = 1.0;
 
   ${shaderHelper.declareVariables(qInput, kInput, output)}
 
@@ -353,7 +363,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
   const vHelper = inputVariable('v', v.dataType, v.dims);
   const output = outputVariable('output', probs.dataType, outputShape);
 
-  const dataType = 'f32';
+  const dataType = tensorTypeToWsglStorageType(probs.dataType);
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
@@ -423,7 +433,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
   const gemmSize = parameters.sequenceLength * parameters.hiddenSize;
   const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads * 3;
-  const dataType = 'f32';
+  const dataType = tensorTypeToWsglStorageType(context.inputs[0].dataType);
 
   const M = parameters.sequenceLength;
   const K = parameters.inputHiddenSize;

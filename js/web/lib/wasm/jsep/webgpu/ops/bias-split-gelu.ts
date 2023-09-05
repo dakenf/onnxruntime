@@ -1,19 +1,14 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
-import {inputVariable, outputVariable, ShaderHelper} from './common';
+import { inputVariable, outputVariable, ShaderHelper, tensorTypeToWsglStorageType } from './common'
 import {erfImpl} from './unary-op';
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
-  if (inputs[0].dataType !== DataType.float) {
-    throw new Error('inputs should be float type');
-  }
-
   if (inputs[0].dims.length !== 3) {
     throw new Error('input should have 3 dimensions');
   }
@@ -40,6 +35,7 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
   const output = outputVariable('output', inputs[0].dataType, outputShape, 4);
 
   const outputSize = ShapeUtil.size(outputShape) / 4;
+  const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M_SQRT2 = sqrt(2.0);
@@ -47,7 +43,7 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
 
   ${shaderHelper.declareVariables(input, bias, output)}
 
-  ${erfImpl('vec4f')}
+  ${erfImpl(`vec4<${dataType}>`, dataType)}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}

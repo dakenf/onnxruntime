@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-with-cache-key';
@@ -24,10 +23,6 @@ export interface LayerNormAttributes extends AttributeWithCacheKey {
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (!inputs || inputs.length < 2) {
     throw new Error('layerNorm requires at least 2 inputs.');
-  }
-
-  if (inputs[0].dataType !== DataType.float || inputs[1].dataType !== DataType.float) {
-    throw new Error('inputs should be float type');
   }
 };
 
@@ -84,14 +79,14 @@ const createLayerNormProgramInfo =
           const getShaderSource = (shaderHelper: ShaderHelper) => `
   const normSize: u32 = ${normSize / components};
   const normSizeTyped: ${dataType} = ${normSize};
-  const epsilon: f32 = ${attributes.epsilon};
+  const epsilon: ${dataType} = ${attributes.epsilon};
 
   ${shaderHelper.declareVariables(...variables)}
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(normCount)}
     let offset = global_idx * normSize;
-    var meanVector = ${fillVector(components)};
-    var meanSquareVector = ${fillVector(components)};
+    var meanVector = ${fillVector(dataType, components)};
+    var meanSquareVector = ${fillVector(dataType, components)};
 
     for (var h: u32 = 0u; h < normSize; h++) {
       meanVector += x[h + offset];

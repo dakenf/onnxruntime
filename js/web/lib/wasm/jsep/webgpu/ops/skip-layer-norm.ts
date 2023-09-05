@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-with-cache-key';
@@ -12,7 +11,7 @@ import {
   getMaxComponents,
   inputVariable,
   outputVariable,
-  ShaderHelper, sumVector,
+  ShaderHelper, sumVector, tensorTypeToWsglStorageType,
 } from './common';
 
 export interface SkipLayerNormAttributes extends AttributeWithCacheKey {
@@ -24,9 +23,6 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
     throw new Error('layerNorm requires at least 3 inputs.');
   }
 
-  if (inputs[0].dataType !== DataType.float || inputs[1].dataType !== DataType.float) {
-    throw new Error('inputs should be float type');
-  }
   const input: TensorView = inputs[0];
   const skip: TensorView = inputs[1];
   const gamma: TensorView = inputs[2];
@@ -116,18 +112,19 @@ const createSkipLayerNormProgramInfo =
       if (hasInputSkipBiasSumOutput) {
         variables.push(outputVariable('inputSkipBiasSum', inputs[0].dataType, outputShape, components));
       }
+      const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
       const getShaderSource = (shaderHelper: ShaderHelper) => `
       const hiddenSize: u32 = ${hiddenSize};
       const hiddenSizeVectorized: u32 = ${hiddenSize / components};
-      const epsilon: f32 = ${attributes.epsilon};
+      const epsilon: ${dataType} = ${attributes.epsilon};
 
       ${shaderHelper.declareVariables(...variables)}
 
       ${shaderHelper.mainStart()}
         ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize / hiddenSize)}
         let offset = global_idx * hiddenSizeVectorized;
-        var sum = ${fillVector(components)};
-        var squareSum = ${fillVector(components)};
+        var sum = ${fillVector(dataType, components)};
+        var squareSum = ${fillVector(dataType, components)};
         for (var i: u32 = 0; i < hiddenSizeVectorized; i++) {
           let skipValue = skip[offset + i];
           let biasValue = ${hasBiasInput ? 'bias[i]' : '0.0'};
@@ -138,8 +135,9 @@ const createSkipLayerNormProgramInfo =
           sum += value;
           squareSum += value * value;
         }
-        let mean: f32 = ${sumVector('sum', components)} / f32(hiddenSize);
-        let variance: f32 = sqrt(${sumVector('squareSum', components)} / f32(hiddenSize) - mean * mean + epsilon);
+        let mean: ${dataType} = ${sumVector('sum', components)} / ${dataType}(hiddenSize);
+        let variance: ${dataType} = sqrt(${sumVector('squareSum', components)} 
+          / ${dataType}(hiddenSize) - mean * mean + epsilon);
         ${hasMeanOutput ? 'meanOutput[global_idx] = mean;' : ''}
         ${hasInvStdDevOutput ? 'invStdOutput[global_idx] = 1.0 / variance;' : ''}
         for (var i: u32 = 0; i < hiddenSizeVectorized; i++) {

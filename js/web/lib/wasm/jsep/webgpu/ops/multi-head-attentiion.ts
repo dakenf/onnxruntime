@@ -5,7 +5,14 @@ import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
 import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat, computeInPlaceSoftmax,} from './attentiion';
-import { inputVariable, outputVariable, ShaderHelper, sumVector } from './common'
+import {
+  fillVector,
+  inputVariable,
+  outputVariable,
+  ShaderHelper,
+  sumVector,
+  tensorTypeToWsglStorageType
+} from './common'
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
@@ -248,7 +255,7 @@ const addBiasTranspose =
       const outputShape = [batchSize, sequenceLength, hiddenSize];
       const outputSize = ShapeUtil.size(outputShape);
 
-      const dataType = 'f32';
+      const dataType = tensorTypeToWsglStorageType(qkv.dataType);
       const getShaderSource = (shaderHelper: ShaderHelper) => `
   const biasOffset = ${biasOffset}u;
   const hiddenSize = ${hiddenSize}u;
@@ -321,14 +328,6 @@ const maybeTransposeToBNSHAndAddBias =
 //     return 1;
 // };
 
-const fillVector = (components?: number) => {
-  if (!components || components === 1) {
-    return 'f32(0)';
-  }
-
-  return `vec${components}<f32>(${new Array(components).fill(0).join(',')})`;
-};
-
 const computeAttentionProbsBSN3H =
     (context: ComputeContext, q: TensorView, key: TensorView, bias: TensorView|undefined,
      parameters: AttentionParameters, attributes: AttentionAttrs) => {
@@ -377,7 +376,7 @@ const computeAttentionProbsBSN3H =
     qOffset += batchOffset; // batch offset
     let kOffset = ${parameters.headSize}u + batchOffset + headOffset + kSequenceIdx * 
         ${parameters.headSize} * numHeads * 3;
-    var value: ${qInput.type.storage} = ${fillVector(components)};
+    var value: ${qInput.type.storage} = ${fillVector(qInput.type.value, components)};
     for (var k: u32 = 0u; k<${K}u; k++) {
       value += q[k + qOffset] * q[k + kOffset];
     }
