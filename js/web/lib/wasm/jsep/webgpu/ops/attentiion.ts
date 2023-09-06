@@ -240,14 +240,9 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     }
     let threadMax: ${dataType} = ${threadMaxValue};
 
-    for (var i: u32 = 0; i < dComp; i++) {
-      let val = x[offset + i] - threadMax;
-      x[offset + i] = exp(val);
-    }
-
     var sumVector = ${fillVector(dataType, components, '0')};
     for (var i: u32 = 0; i < dComp; i++) {
-      sumVector += x[offset + i];
+      sumVector += exp(x[offset + i] - threadMax);
     }
     let sum = ${sumVector('sumVector', components)};
 
@@ -257,7 +252,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       }
     } else {
       for (var i: u32 = 0; i < dComp; i++) {
-        x[offset + i] = x[offset + i] / sum;
+        x[offset + i] = exp(x[offset + i] - threadMax) / sum;
       }
     }
   }`;
@@ -305,8 +300,6 @@ const computeAttentionProbs =
   const M: u32 = ${M}u;
   const N: u32 = ${N}u;
   const K: u32 = ${K}u;
-  const numHeads: u32 = ${parameters.numHeads};
-  const batchSize: u32 = ${parameters.batchSize};
   const gemmSize: u32 = ${gemmSize};
   const alpha = ${dataType}(${alpha});
   const beta: ${dataType} = 1.0;
@@ -316,23 +309,21 @@ const computeAttentionProbs =
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
     let idxWoGemmSize = global_idx / gemmSize;
-    let batchIndex = idxWoGemmSize / numHeads;
-    let headIndex = idxWoGemmSize % numHeads;
-    let inputOffset = ${parameters.sequenceLength * vectorizedHeadSize} * idxWoGemmSize;
-    let kOffset = ${parameters.kvSequenceLength * vectorizedHeadSize} * idxWoGemmSize;
-
     let gemmOffset = global_idx % gemmSize;
     let m = gemmOffset / N;
     let n = gemmOffset % N;
 
-    var value = ${dataType}(0);
+    let inputOffset = ${parameters.sequenceLength * vectorizedHeadSize} * idxWoGemmSize + m * K;
+    let kOffset = ${parameters.kvSequenceLength * vectorizedHeadSize} * idxWoGemmSize + n * K;
+
+    var value: ${qInput.type.storage} = ${fillVector(dataType, components)};
     for (var k: u32 = 0u; k<${K}u; k++) {
       // no trans a + trans b
-      value += ${components > 1 ? 'dot(q[m * K + k + inputOffset], key[n * K + k + kOffset])' 
-      : 'q[m * K + k + inputOffset] * key[n * K + k + kOffset]'};
+      value += q[k + inputOffset] * key[k + kOffset];
     }
+    let sum = ${sumVector('value', components)} * alpha;
     // value += beta * output[global_id.x]; // no mask
-    output[global_idx] = value * alpha;
+    output[global_idx] = sum;
   }`;
 
     const inputTypes = inputs.map(_ => GpuDataType.default);
@@ -432,17 +423,18 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
 
   // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
   const gemmSize = parameters.sequenceLength * parameters.hiddenSize;
-  const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads * 3;
+  const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads;
   const dataType = tensorTypeToWsglStorageType(context.inputs[0].dataType);
 
   const M = parameters.sequenceLength;
   const K = parameters.inputHiddenSize;
+  const N = parameters.headSize;
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${M}u;
   const K: u32 = ${K}u;
+  const N: u32 = ${N}u;
   const numHeads: u32 = ${parameters.numHeads};
-  const headSizes = array<u32, 3>(${parameters.headSize}, ${parameters.headSize}, ${parameters.vHeadSize});
   const ldb = ${parameters.hiddenSize + parameters.hiddenSize + parameters.vHiddenSize}u;
 
   @group(0) @binding(0) var<storage, read> input: array<${dataType}>;
@@ -454,35 +446,37 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
-    let qkvIndex = global_idx % 3;
-    let globalIdxDiv3 = global_idx / 3;
-    let N: u32 = headSizes[qkvIndex];
     let gemmSize = M * N;
-    let idxWoGemmSize = globalIdxDiv3 / gemmSize;
+    let idxWoGemmSize = global_idx / gemmSize;
     let batchIndex = idxWoGemmSize / numHeads;
     let headIndex = idxWoGemmSize % numHeads;
 
-    let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize};
-    let biasOffset = qkvIndex * ${parameters.hiddenSize} + headIndex * headSizes[qkvIndex];
-
-    let gemmOffset = globalIdxDiv3 % gemmSize;
+    let gemmOffset = global_idx % gemmSize;
     let m = gemmOffset / N;
     let n = gemmOffset % N;
 
-    var value = ${dataType}(0);
+    let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize} + m * K;
+    let biasOffsetQ = headIndex * ${parameters.headSize};
+    let biasOffsetK = ${parameters.hiddenSize} + biasOffsetQ;
+    let biasOffsetV = ${parameters.hiddenSize} + biasOffsetK;
+
+    var value = vec3<${dataType}>(0, 0, 0);
     for (var k: u32 = 0u; k<${K}u; k++) {
-      // no trans
-      value += input[m * K + k + inputOffset] * weight[k * ldb + biasOffset + n];
+      let a = input[k + inputOffset];
+      let itemWeightOffset = k * ldb + n;
+      value[0] += a * weight[itemWeightOffset + biasOffsetQ];
+      value[1] += a * weight[itemWeightOffset + biasOffsetK];
+      value[2] += a * weight[itemWeightOffset + biasOffsetV];
     }
 
-    value += bias[gemmOffset % headSizes[qkvIndex] + biasOffset];
-    if (qkvIndex == 0) {
-      outputQ[globalIdxDiv3] = value;
-    } else if (qkvIndex == 1) {
-      outputK[globalIdxDiv3] = value;
-    } else if (qkvIndex == 2) {
-      outputV[globalIdxDiv3] = value;
-    }
+    let headOffset = gemmOffset % ${parameters.headSize};
+    value[0] += bias[headOffset + biasOffsetQ];
+    value[1] += bias[headOffset + biasOffsetK];
+    value[2] += bias[headOffset + biasOffsetV];
+
+    outputQ[global_idx] = value[0];
+    outputK[global_idx] = value[1];
+    outputV[global_idx] = value[2];
   }`;
 
   const inputTypes = [GpuDataType.default, GpuDataType.default, GpuDataType.default];
