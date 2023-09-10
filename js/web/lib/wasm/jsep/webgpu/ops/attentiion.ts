@@ -224,7 +224,15 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     threadMaxValue = 'max(max(threadMaxVector.x, threadMaxVector.y), max(threadMaxVector.z, threadMaxVector.w))';
   }
   const dataType = tensorTypeToWsglStorageType(input.dataType);
-  const WG = 64;
+  let WG = 64;
+  const dComp = D / components;
+  if (dComp < WG) {
+    WG = 1;
+  } else if (dComp / 8 < 64) {
+    WG = Math.ceil(dComp / 8);
+  }
+  const elementsPerWG = Math.ceil(D / components / WG);
+
   // 6.2.4 in wgsl spec
   const threadMaxMinValue = dataType === 'f32' ? '-3.402823e+38f' : '-65504.0h';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
@@ -237,11 +245,11 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
   @compute @workgroup_size(${WG}, 1, 1)
   fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
     @builtin(local_invocation_index) local_index : u32) {
-    let localOffset = local_index * ${WG};
-    let offset: u32 = workgroup_id.x * dComp + local_index * ${WG};
+    let localOffset = local_index * ${elementsPerWG};
+    let offset: u32 = workgroup_id.x * dComp + localOffset;
 
     var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)};
-    for (var i: u32 = 0; i + localOffset < dComp; i++) {
+    for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
       threadMaxVector = max(x[offset + i], threadMaxVector);
     }
     wgMax[local_index] = ${threadMaxValue};
@@ -253,7 +261,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     }
 
     var sumVector = ${fillVector(dataType, components, '0')};
-    for (var i: u32 = 0; i + localOffset < dComp; i++) {
+    for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
       sumVector += exp(x[offset + i] - maxValue);
     }
     wgSum[local_index] = ${sumVector('sumVector', components)};
@@ -265,11 +273,11 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     }
 
     if (sum == 0) {
-      for (var i: u32 = 0; i + localOffset < dComp; i++) {
+      for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
         x[offset + i] = ${fillVector(dataType, components, 'dInv')};
       }
     } else {
-      for (var i: u32 = 0; i + localOffset < dComp; i++) {
+      for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
         x[offset + i] = exp(x[offset + i] - maxValue) / sum;
       }
     }
@@ -322,7 +330,7 @@ const computeAttentionProbs =
     const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${M}u;
   const N: u32 = ${N}u;
-  const K: u32 = ${K / components}u;
+  const K: u32 = ${K}u;
   const alpha = ${dataType}(${alpha});
   const beta: ${dataType} = 1.0;
   const TILE_SIZE = ${TILE_SIZE}u;
