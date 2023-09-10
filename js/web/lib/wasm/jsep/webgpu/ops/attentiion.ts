@@ -1,11 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common'
-import {TensorView} from '../../tensor'
-import {ShapeUtil} from '../../util'
-import {createAttributeWithCacheKey} from '../attribute-with-cache-key'
-import {ComputeContext, GpuDataType} from '../types'
+import {DataType} from '../../../wasm-common';
+import {TensorView} from '../../tensor';
+import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
+import {ComputeContext, GpuDataType} from '../types';
 
 import {
   fillVector,
@@ -315,7 +314,7 @@ const computeAttentionProbs =
   ${shaderHelper.declareVariables(qInput, kInput, output)}
 
   @compute @workgroup_size(${TILE_SIZE}, ${TILE_SIZE}, 1)
-  fn main(@builtin(global_invocation_id) global_id : vec3<u32>, @builtin(workgroup_id) workgroup_id : vec3<u32>,
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
    @builtin(local_invocation_id) local_id : vec3<u32>, @builtin(local_invocation_index) local_index : u32) {
    let global_idx = (workgroup_id.z * ${dispatch.x * dispatch.y}u +
           workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
@@ -376,37 +375,65 @@ const computeAttentionProbs =
 
 const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: TensorView, params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
-  const outputSize = ShapeUtil.size(outputShape);
 
   const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
   const vHelper = inputVariable('v', v.dataType, v.dims);
   const output = outputVariable('output', probs.dataType, outputShape);
 
   const dataType = tensorTypeToWsglStorageType(probs.dataType);
+
+  const TILE_SIZE = 8;
+  const dispatch = {
+    x: Math.ceil(params.sequenceLength / TILE_SIZE),
+    y: Math.ceil(params.vHeadSize / TILE_SIZE),
+    z: params.batchSize * params.numHeads
+  };
+
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
   const K: u32 = ${params.totalSequenceLength}u;
   const numHeads: u32 = ${params.numHeads}u;
+  const TILE_SIZE = ${TILE_SIZE}u;
+  
+  var<workgroup> tileQ: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileK: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
 
   ${shaderHelper.declareVariables(probsHelper, vHelper, output)}
 
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let n = global_idx % N;
-    let m = (global_idx / N) % M;
-    let stack = global_idx / (M * N);
-    let batchIndex = stack / numHeads;
-    let headIndex = stack % numHeads;
+  @compute @workgroup_size(${TILE_SIZE}, ${TILE_SIZE}, 1)
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
+   @builtin(local_invocation_id) local_id : vec3<u32>, @builtin(local_invocation_index) local_index : u32) {
+   let global_idx = (workgroup_id.z * ${dispatch.x * dispatch.y}u +
+          workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
-    let offsetA = stack * (M * K) + m * K;
-    let offsetB = stack * (K * N) + n;
+    let headIdx = workgroup_id.z;
+    let m = workgroup_id.y * TILE_SIZE + local_id.y;
+    let n = workgroup_id.x * TILE_SIZE + local_id.x;
+
+    let offsetA = headIdx * (M * K) + m * K;
+    let offsetB = headIdx * (N * K) + n;
 
     var value = ${dataType}(0);
-    for (var k: u32 = 0u; k<K; k++) {
-      value += probs[offsetA + k] * v[offsetB + k * N];
+    for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
+      if (m < M && w + local_id.x < K) {
+        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + w + local_id.x];
+      }
+      if (w + local_id.y < N) {
+        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + (w + local_id.y) * N];
+      }
+      workgroupBarrier();
+      for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * k + local_id.x];
+      }
+
+      workgroupBarrier();
     }
-    output[global_idx] = value;
+    let headOffset = headIdx * M * N;
+    if (m < M && n < N) {
+      let outputIdx = headOffset + m * N + n;
+      output[outputIdx] = value;
+    }
   }`;
 
   return context.compute(
@@ -416,7 +443,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
       cacheHint: JSON.stringify(params),
       outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
       getShaderSource,
-      dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+      dispatchGroup: () => (dispatch)
     },
     {inputs: [probs, v], outputs: [-1]})[0];
 };
