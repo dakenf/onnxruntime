@@ -411,8 +411,8 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
 
   const TILE_SIZE = 8;
   const dispatch = {
-    x: Math.ceil(params.sequenceLength / TILE_SIZE),
-    y: Math.ceil(params.vHeadSize / TILE_SIZE),
+    x: Math.ceil(params.vHeadSize / TILE_SIZE),
+    y: Math.ceil(params.sequenceLength / TILE_SIZE),
     z: params.batchSize * params.numHeads
   };
 
@@ -446,7 +446,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
       if (m < M && w + local_id.x < K) {
         tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + w + local_id.x];
       }
-      if (w + local_id.y < N) {
+      if (n < N && w + local_id.y < K) {
         tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + (w + local_id.y) * N];
       }
       workgroupBarrier();
