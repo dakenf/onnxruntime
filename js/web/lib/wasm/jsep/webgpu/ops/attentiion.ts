@@ -224,34 +224,53 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     threadMaxValue = 'max(max(threadMaxVector.x, threadMaxVector.y), max(threadMaxVector.z, threadMaxVector.w))';
   }
   const dataType = tensorTypeToWsglStorageType(input.dataType);
+  const WG = 64;
+  // 6.2.4 in wgsl spec
   const threadMaxMinValue = dataType === 'f32' ? '-3.402823e+38f' : '-65504.0h';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const dInv: ${dataType} = 1 / ${D};
   const dComp = ${D / components};
-  ${shaderHelper.declareVariables(inputHelper)}
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(N)}
-    let offset: u32 = global_idx * dComp;
+  var<workgroup> wgMax: array<${dataType}, ${WG}>;
+  var<workgroup> wgSum: array<${dataType}, ${WG}>;
 
-    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)}; // 6.2.4 in wgsl spec
-    for (var i: u32 = 0; i < dComp; i++) {
+  ${shaderHelper.declareVariables(inputHelper)}
+  @compute @workgroup_size(${WG}, 1, 1)
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
+    @builtin(local_invocation_index) local_index : u32) {
+    let localOffset = local_index * ${WG};
+    let offset: u32 = workgroup_id.x * dComp + local_index * ${WG};
+
+    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)};
+    for (var i: u32 = 0; i + localOffset < dComp; i++) {
       threadMaxVector = max(x[offset + i], threadMaxVector);
     }
-    let threadMax: ${dataType} = ${threadMaxValue};
+    wgMax[local_index] = ${threadMaxValue};
+    workgroupBarrier();
+
+    var maxValue = ${threadMaxMinValue};
+    for (var i = 0u; i < ${WG}; i++) {
+      maxValue = max(wgMax[i], maxValue);
+    }
 
     var sumVector = ${fillVector(dataType, components, '0')};
-    for (var i: u32 = 0; i < dComp; i++) {
-      sumVector += exp(x[offset + i] - threadMax);
+    for (var i: u32 = 0; i + localOffset < dComp; i++) {
+      sumVector += exp(x[offset + i] - maxValue);
     }
-    let sum = ${sumVector('sumVector', components)};
+    wgSum[local_index] = ${sumVector('sumVector', components)};
+    workgroupBarrier();
+
+    var sum: ${dataType} = 0;
+    for (var i = 0u; i < ${WG}; i++) {
+      sum += wgSum[i];
+    }
 
     if (sum == 0) {
-      for (var i: u32 = 0; i < dComp; i++) {
+      for (var i: u32 = 0; i + localOffset < dComp; i++) {
         x[offset + i] = ${fillVector(dataType, components, 'dInv')};
       }
     } else {
-      for (var i: u32 = 0; i < dComp; i++) {
-        x[offset + i] = exp(x[offset + i] - threadMax) / sum;
+      for (var i: u32 = 0; i + localOffset < dComp; i++) {
+        x[offset + i] = exp(x[offset + i] - maxValue) / sum;
       }
     }
   }`;
@@ -263,7 +282,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       inputTypes: [GpuDataType.default],
       outputs: [],
       getShaderSource,
-      dispatchGroup: () => ({x: Math.ceil(N / 64 /* workgroup size */)})
+      dispatchGroup: () => ({x: N})
     },
     {inputs: [input], outputs: []});
 };
