@@ -102,7 +102,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
       if (key.dims[2] !== query.dims[2]) {
         throw new Error('Input \'query\' and \'key\' shall have same dim 2 (hidden_size)');
       }
-      qkvFormat = AttentionQkvFormat.Q_K_V_BSNH;
+      qkvFormat = AttentionQkvFormat.qkvBSNH;
       kvSequenceLength = key.dims[1];
     } else if (key.dims.length === 5) {
       if (key.dims[2] !== attributes.numHeads || key.dims[3] !== 2 || key.dims[4] !== headSize) {
@@ -111,14 +111,14 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
       if (value) {
         throw new Error('Expect \'value\' be none when \'key\' has packed kv format.');
       }
-      qkvFormat = AttentionQkvFormat.Q_KV_BSNH_BSN2H;
+      qkvFormat = AttentionQkvFormat.qKvBSNHxBSN2H;
       kvSequenceLength = key.dims[1];
     } else {  // key_dims.size() == 4 (cross-attention with past_key)
       if (key.dims[1] !== attributes.numHeads || key.dims[3] !== headSize) {
         throw new Error('Expect \'key\' shape (batch_size, num_heads, kv_sequence_length, head_size) for past_key');
       }
 
-      qkvFormat = AttentionQkvFormat.UNKNOWN;
+      qkvFormat = AttentionQkvFormat.unknown;
       kvSequenceLength = key.dims[2];
     }
   } else {  // packed QKV
@@ -129,7 +129,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
       throw new Error('Expect \'query\' shape (batch_size, kv_sequence_length, num_heads, 3, head_size) for packed kv');
     }
 
-    qkvFormat = AttentionQkvFormat.QKV_BSN3H;
+    qkvFormat = AttentionQkvFormat.qkvBSN3H;
   }
 
   if (bias) {
@@ -144,15 +144,15 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     }
   }
 
-  let maskType: AttentionMaskType = AttentionMaskType.MASK_NONE;
+  let maskType: AttentionMaskType = AttentionMaskType.none;
   if (keyPaddingMask) {
     maskType = AttentionMaskType.MASK_UNKNOWN;
     const maskDims = keyPaddingMask.dims;
     if (maskDims.length === 1) {
       if (maskDims[0] === batchSize) {
-        maskType = AttentionMaskType.MASK_1D_KEY_SEQ_LEN;
+        maskType = AttentionMaskType.mask1dKeySeqLen;
       } else if (maskDims[0] === 3 * batchSize + 2) {
-        maskType = AttentionMaskType.MASK_1D_KEY_SEQ_LEN_START
+        maskType = AttentionMaskType.mask1DKeySeqLenStart
       }
     } else if (maskDims.length === 2 && maskDims[0] === batchSize && maskDims[1] === kvSequenceLength) {
       maskType = AttentionMaskType.MASK_2D_KEY_PADDING;

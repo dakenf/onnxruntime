@@ -1,20 +1,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {TensorView} from '../../tensor';
-import {ShapeUtil} from '../../util';
-import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-with-cache-key';
-import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
+import { TensorView } from '../../tensor';
+import { ShapeUtil } from '../../util';
+import { AttributeWithCacheKey, createAttributeWithCacheKey } from '../attribute-with-cache-key';
+import { ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata } from '../types';
 
 import {
-  ShaderHelper,
-  inputVariable,
-  tensorTypeToWsglStorageType,
-  outputVariable,
+  fillVector,
   getMaxComponents,
-  fillVector
-} from './common'
-import { DataType } from '../../../wasm-common'
+  inputVariable,
+  outputVariable,
+  ShaderHelper,
+  tensorTypeToWsglStorageType
+} from './common';
+import { DataType } from '../../../wasm-common';
 
 export interface InstanceNormAttributes extends AttributeWithCacheKey {
   epsilon: number;
@@ -99,11 +99,6 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
   const unitsOfWork = n * c / components;
   const wgSize = Math.ceil(h / WG);
 
-  let divisor = `${dataType}(H)`;
-  if (input.dataType === DataType.float16 && h > 65504) {
-    divisor = `f16(${h / 2}) / 2.0h`;
-  }
-
   const getMeanShaderSource = (shaderHelper: ShaderHelper) => `
   const H: u32 = ${h};
   const C: u32 = ${c / components};
@@ -131,8 +126,8 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
         squaredSum += value * value;
     }
     // we need to divide it here to avoid fp16 overflow
-    sum = sum / ${divisor};
-    squaredSum = squaredSum / ${divisor};
+    sum = sum / ${wgSize};
+    squaredSum = squaredSum / ${wgSize};
     output[global_idx] = ${setOutputValue('sum', 'squaredSum')};
   }`;
 
@@ -172,6 +167,8 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
         sum += value[0];
         squaredSum += value[1];
     }
+    sum = sum / ${h / wgSize};
+    squaredSum = squaredSum / ${h / wgSize};
     let invStdDev = 1 / sqrt(squaredSum - sum * sum + epsilon);
     let channelScale = invStdDev * scale[currentChannelNumber];
     let channelShift = bias[currentChannelNumber] - sum * channelScale;

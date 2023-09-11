@@ -67,7 +67,6 @@ export class ProgramManager {
     //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     //   });
     //
-    //
     //   const commandEncoder = this.backend.getCommandEncoder();
     //   commandEncoder?.copyBufferToBuffer(
     //       output.buffer,

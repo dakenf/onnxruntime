@@ -14,25 +14,25 @@ import {
   ShaderHelper,
   sumVector,
   tensorTypeToWsglStorageType
-} from './common'
-import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose'
+} from './common';
+import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
 
 export enum AttentionQkvFormat {
-  UNKNOWN,               // enum value not set, or depends on qkv projection implementation details
-  Q_K_V_BNSH,            // for non-packed qkv, permuted
-  Q_K_V_BSNH,            // for non-packed qkv, not permuted, used by memory efficient attention or MultiHeadAttention
-  QKV_BSN3H,             // for TRT fused attention, qkv are packed
-  Q_K_V_BNSH_QKV_BS3NH,  // for TRT fused causal attention, data has two formats (qkv is 3BNSH, gemm_buffer is BS3NH)
-  Q_KV_BSNH_BSN2H,       // for TRT fused cross attention, kv are packed
-  Q_K_V_TNH,             // for memory efficient attention, qkv are not packed, and paddings are removed.
-  QKV_TN3H,              // for TRT fused attention, qkv are packed and paddings are removed
+  unknown,               // enum value not set, or depends on qkv projection implementation details
+  qkvBNSH,            // for non-packed qkv, permuted
+  qkvBSNH,            // for non-packed qkv, not permuted, used by memory efficient attention or MultiHeadAttention
+  qkvBSN3H,             // for TRT fused attention, qkv are packed
+  qkvBNSHqkvBS3NH,  // for TRT fused causal attention, data has two formats (qkv is 3BNSH, gemm_buffer is BS3NH)
+  qKvBSNHxBSN2H,       // for TRT fused cross attention, kv are packed
+  qkvTNH,             // for memory efficient attention, qkv are not packed, and paddings are removed.
+  qkvTN3H,              // for TRT fused attention, qkv are packed and paddings are removed
 }
 
 export enum AttentionMaskType {
-  MASK_NONE,                  // No mask
-  MASK_1D_KEY_SEQ_LEN,        // [batch_size], key sequence length
-  MASK_1D_END_START,          // [2 * batch_size] with end positions and start positions
-  MASK_1D_KEY_SEQ_LEN_START,  // [3 * batch_size + 2] with [key_len[0], ..., key_len[batch_size - 1], query_start[0],
+  none,                  // No mask
+  mask1dKeySeqLen,        // [batch_size], key sequence length
+  mask1dEndStart,          // [2 * batch_size] with end positions and start positions
+  mask1DKeySeqLenStart,  // [3 * batch_size + 2] with [key_len[0], ..., key_len[batch_size - 1], query_start[0],
                               // ..., query_start[batch_size - 1], query_end[batch_size - 1], key_start[0], ...,
                               // key_start[batch_size - 1], key_end[batch_size - 1]]
   MASK_2D_DUMMY,              // dummy mask with shape [1, 1] or [batch_size, 1]. It has same effect as no mask.
@@ -170,7 +170,7 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
   const totalSequenceLength = kvSequenceLength + pastSequenceLength;
   const maxSequenceLength = -1;
 
-  let maskType = AttentionMaskType.MASK_NONE;
+  let maskType = AttentionMaskType.none;
   if (maskIndex) {
     // maskType = AttentionMaskType.MASK_UNKNOWN;
     // TODO: handle mask
@@ -204,7 +204,7 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
     scale: attributes.scale,
     broadcastResPosBias: false,
     passPastInKv: false,
-    qkvFormat: AttentionQkvFormat.Q_K_V_BNSH,
+    qkvFormat: AttentionQkvFormat.qkvBNSH,
   };
 };
 
@@ -422,9 +422,8 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
   const K: u32 = ${params.totalSequenceLength / components}u;
-  const numHeads: u32 = ${params.numHeads}u;
   const TILE_SIZE = ${TILE_SIZE}u;
-  
+
   var<workgroup> tileQ: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
   var<workgroup> tileK: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
 
@@ -437,30 +436,32 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
           workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
     let headIdx = workgroup_id.z;
-    let m = workgroup_id.y * TILE_SIZE + local_id.y;
-    let n = workgroup_id.x * TILE_SIZE + local_id.x;
+    let m = workgroup_id.y * TILE_SIZE;
+    let n = workgroup_id.x * TILE_SIZE;
+    let lm = m + local_id.y;
+    let ln = n + local_id.x;
 
     let offsetA = headIdx * (M * K) + m * K;
     let offsetB = headIdx * (N * K) + n;
 
     var value = ${fillVector(dataType, components)};
     for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
-      if (m < M && w + local_id.x < K) {
-        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + w + local_id.x];
+      if (m + local_id.y < M && w + local_id.x < K) {
+        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + local_id.y * K + w + local_id.x];
       }
-      if (n < N && w + local_id.y < K) {
-        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + (w + local_id.y) * N];
+      if (n + local_id.y < N && w + local_id.x < K) {
+        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + local_id.y * K + w + local_id.x];
       }
       workgroupBarrier();
       for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
-        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * k + local_id.x];
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * local_id.x + k];
       }
 
       workgroupBarrier();
     }
     let headOffset = headIdx * M * N;
-    if (m < M && n < N) {
-      let outputIdx = headOffset + m * N + n;
+    if (lm < M && ln < N) {
+      let outputIdx = headOffset + lm * N + ln;
       output[outputIdx] = ${sumVector('value', components)};
     }
   }`;
@@ -591,7 +592,9 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
       let outputIdx = offset + m * N + n;
       outputQ[outputIdx] = valueQ;
       outputK[outputIdx] = valueK;
-      outputV[outputIdx] = valueV;
+      // transpose V to use vec4 optimizations in compute score
+      let outputIdxV = offset + n * M + m;
+      outputV[outputIdxV] = valueV;
     }
   }`;
 
