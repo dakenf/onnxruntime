@@ -1,11 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common'
-import {TensorView} from '../../tensor'
-import {ShapeUtil} from '../../util'
-import {createAttributeWithCacheKey} from '../attribute-with-cache-key'
-import {ComputeContext, GpuDataType} from '../types'
+import {DataType} from '../../../wasm-common';
+import {TensorView} from '../../tensor';
+import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
+import {ComputeContext, GpuDataType} from '../types';
 
 import {
   fillVector,
@@ -225,34 +224,61 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     threadMaxValue = 'max(max(threadMaxVector.x, threadMaxVector.y), max(threadMaxVector.z, threadMaxVector.w))';
   }
   const dataType = tensorTypeToWsglStorageType(input.dataType);
+  let WG = 64;
+  const dComp = D / components;
+  if (dComp < WG) {
+    WG = 1;
+  } else if (dComp / 8 < 64) {
+    WG = Math.ceil(dComp / 8);
+  }
+  const elementsPerWG = Math.ceil(D / components / WG);
+
+  // 6.2.4 in wgsl spec
   const threadMaxMinValue = dataType === 'f32' ? '-3.402823e+38f' : '-65504.0h';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const dInv: ${dataType} = 1 / ${D};
   const dComp = ${D / components};
-  ${shaderHelper.declareVariables(inputHelper)}
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(N)}
-    let offset: u32 = global_idx * dComp;
+  var<workgroup> wgMax: array<${dataType}, ${WG}>;
+  var<workgroup> wgSum: array<${dataType}, ${WG}>;
 
-    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)}; // 6.2.4 in wgsl spec
-    for (var i: u32 = 0; i < dComp; i++) {
+  ${shaderHelper.declareVariables(inputHelper)}
+  @compute @workgroup_size(${WG}, 1, 1)
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
+    @builtin(local_invocation_index) local_index : u32) {
+    let localOffset = local_index * ${elementsPerWG};
+    let offset: u32 = workgroup_id.x * dComp + localOffset;
+
+    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)};
+    for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
       threadMaxVector = max(x[offset + i], threadMaxVector);
     }
-    let threadMax: ${dataType} = ${threadMaxValue};
+    wgMax[local_index] = ${threadMaxValue};
+    workgroupBarrier();
+
+    var maxValue = ${threadMaxMinValue};
+    for (var i = 0u; i < ${WG}; i++) {
+      maxValue = max(wgMax[i], maxValue);
+    }
 
     var sumVector = ${fillVector(dataType, components, '0')};
-    for (var i: u32 = 0; i < dComp; i++) {
-      sumVector += exp(x[offset + i] - threadMax);
+    for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
+      sumVector += exp(x[offset + i] - maxValue);
     }
-    let sum = ${sumVector('sumVector', components)};
+    wgSum[local_index] = ${sumVector('sumVector', components)};
+    workgroupBarrier();
+
+    var sum: ${dataType} = 0;
+    for (var i = 0u; i < ${WG}; i++) {
+      sum += wgSum[i];
+    }
 
     if (sum == 0) {
-      for (var i: u32 = 0; i < dComp; i++) {
+      for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
         x[offset + i] = ${fillVector(dataType, components, 'dInv')};
       }
     } else {
-      for (var i: u32 = 0; i < dComp; i++) {
-        x[offset + i] = exp(x[offset + i] - threadMax) / sum;
+      for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
+        x[offset + i] = exp(x[offset + i] - maxValue) / sum;
       }
     }
   }`;
@@ -264,7 +290,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       inputTypes: [GpuDataType.default],
       outputs: [],
       getShaderSource,
-      dispatchGroup: () => ({x: Math.ceil(N / 64 /* workgroup size */)})
+      dispatchGroup: () => ({x: N})
     },
     {inputs: [input], outputs: []});
 };
@@ -282,7 +308,7 @@ const computeAttentionProbs =
 
     const dataType = tensorTypeToWsglStorageType(q.dataType);
 
-    const components = 1; //getMaxComponents(parameters.headSize);
+    const components = getMaxComponents(parameters.headSize);
     const qInput = inputVariable('q', q.dataType, q.dims, components);
     const kInput = inputVariable('key', key.dataType, key.dims, components);
     const output = outputVariable('output', q.dataType, probsShape);
@@ -292,7 +318,7 @@ const computeAttentionProbs =
     const N = parameters.totalSequenceLength;
     const K = vectorizedHeadSize;
 
-    const TILE_SIZE = Math.min(8, vectorizedHeadSize);
+    const TILE_SIZE = 16;
 
     const dispatch = {
       x: Math.ceil(parameters.totalSequenceLength / TILE_SIZE),
@@ -309,49 +335,48 @@ const computeAttentionProbs =
   const beta: ${dataType} = 1.0;
   const TILE_SIZE = ${TILE_SIZE}u;
 
-  var<workgroup> tileQ: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
-  var<workgroup> tileK: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileQ: array<${qInput.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileK: array<${qInput.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
 
   ${shaderHelper.declareVariables(qInput, kInput, output)}
 
   @compute @workgroup_size(${TILE_SIZE}, ${TILE_SIZE}, 1)
-  fn main(@builtin(global_invocation_id) global_id : vec3<u32>, @builtin(workgroup_id) workgroup_id : vec3<u32>,
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
    @builtin(local_invocation_id) local_id : vec3<u32>, @builtin(local_invocation_index) local_index : u32) {
    let global_idx = (workgroup_id.z * ${dispatch.x * dispatch.y}u +
           workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
     // x holds the N and y holds the M
     let headIdx = workgroup_id.z;
-    let m = workgroup_id.y * TILE_SIZE + local_id.y;
-    let n = workgroup_id.x * TILE_SIZE + local_id.x;
+    let m = workgroup_id.y * TILE_SIZE;
+    let n = workgroup_id.x * TILE_SIZE;
+    let lm = m + local_id.y;
+    let ln = n + local_id.x;
 
     let qOffset = ${parameters.sequenceLength * vectorizedHeadSize} * headIdx + m * K;
     let kOffset = ${parameters.kvSequenceLength * vectorizedHeadSize} * headIdx + n * K;
 
-    var value: ${dataType} = 0;
+    var value = ${fillVector(dataType, components)};
     for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
-      if (m < M && w + local_id.x < K) {
-        tileQ[TILE_SIZE * local_id.x + local_id.y] = q[qOffset + w + local_id.x];
+      if (m + local_id.y < M && w + local_id.x < K) {
+        tileQ[TILE_SIZE * local_id.y + local_id.x] = q[qOffset + local_id.y * K + w + local_id.x];
       }
-      if (n < N && w + local_id.x < K) {
-        tileK[TILE_SIZE * local_id.x + local_id.y] = key[kOffset + w + local_id.x];
+      if (n + local_id.y < N && w + local_id.x < K) {
+        tileK[TILE_SIZE * local_id.y + local_id.x] = key[kOffset + local_id.y * K + w + local_id.x];
       }
       workgroupBarrier();
 
-      for (var k: u32 = 0u; k<TILE_SIZE; k++) {
-        value += tileQ[TILE_SIZE * local_id.x + k] * tileK[TILE_SIZE * k + local_id.y];
+      for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * local_id.x + k];
       }
 
       workgroupBarrier();
     }
 
-    //${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(ShapeUtil.size(probsShape))}
-    // output[global_idx] = f32(workgroup_id.z);
-
     let headOffset = headIdx * M * N;
-    if (m < M && n < N) {
-      let outputIdx = headOffset + m * N + n;
-      output[outputIdx] = value;
+    if (lm < M && ln < N) {
+      let outputIdx = headOffset + lm * N + ln;
+      output[outputIdx] = ${sumVector('value', components)} * alpha;
     }
   }`;
 
@@ -377,37 +402,67 @@ const computeAttentionProbs =
 
 const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: TensorView, params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
-  const outputSize = ShapeUtil.size(outputShape);
 
-  const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
-  const vHelper = inputVariable('v', v.dataType, v.dims);
+  const components = getMaxComponents(params.totalSequenceLength);
+  const probsHelper = inputVariable('probs', probs.dataType, probs.dims, components);
+  const vHelper = inputVariable('v', v.dataType, v.dims, components);
   const output = outputVariable('output', probs.dataType, outputShape);
 
   const dataType = tensorTypeToWsglStorageType(probs.dataType);
+
+
+  const TILE_SIZE = 16;
+  const dispatch = {
+    x: Math.ceil(params.vHeadSize / TILE_SIZE),
+    y: Math.ceil(params.sequenceLength / TILE_SIZE),
+    z: params.batchSize * params.numHeads
+  };
+
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
-  const K: u32 = ${params.totalSequenceLength}u;
+  const K: u32 = ${params.totalSequenceLength / components}u;
   const numHeads: u32 = ${params.numHeads}u;
+  const TILE_SIZE = ${TILE_SIZE}u;
+  
+  var<workgroup> tileQ: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileK: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
 
   ${shaderHelper.declareVariables(probsHelper, vHelper, output)}
 
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let n = global_idx % N;
-    let m = (global_idx / N) % M;
-    let stack = global_idx / (M * N);
-    let batchIndex = stack / numHeads;
-    let headIndex = stack % numHeads;
+  @compute @workgroup_size(${TILE_SIZE}, ${TILE_SIZE}, 1)
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
+   @builtin(local_invocation_id) local_id : vec3<u32>, @builtin(local_invocation_index) local_index : u32) {
+   let global_idx = (workgroup_id.z * ${dispatch.x * dispatch.y}u +
+          workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
-    let offsetA = stack * (M * K) + m * K;
-    let offsetB = stack * (K * N) + n;
+    let headIdx = workgroup_id.z;
+    let m = workgroup_id.y * TILE_SIZE + local_id.y;
+    let n = workgroup_id.x * TILE_SIZE + local_id.x;
 
-    var value = ${dataType}(0);
-    for (var k: u32 = 0u; k<K; k++) {
-      value += probs[offsetA + k] * v[offsetB + k * N];
+    let offsetA = headIdx * (M * K) + m * K;
+    let offsetB = headIdx * (N * K) + n;
+
+    var value = ${fillVector(dataType, components)};
+    for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
+      if (m < M && w + local_id.x < K) {
+        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + w + local_id.x];
+      }
+      if (n < N && w + local_id.y < K) {
+        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + (w + local_id.y) * N];
+      }
+      workgroupBarrier();
+      for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * k + local_id.x];
+      }
+
+      workgroupBarrier();
     }
-    output[global_idx] = value;
+    let headOffset = headIdx * M * N;
+    if (m < M && n < N) {
+      let outputIdx = headOffset + m * N + n;
+      output[outputIdx] = ${sumVector('value', components)};
+    }
   }`;
 
   return context.compute(
@@ -417,7 +472,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
       cacheHint: JSON.stringify(params),
       outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
       getShaderSource,
-      dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
+      dispatchGroup: () => (dispatch)
     },
     {inputs: [probs, v], outputs: [-1]})[0];
 };
@@ -451,13 +506,18 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   // TODO: handle mask
 
   // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
-  const gemmSize = parameters.sequenceLength * parameters.hiddenSize;
-  const unitsOfWork = gemmSize * parameters.batchSize * parameters.numHeads;
   const dataType = tensorTypeToWsglStorageType(context.inputs[0].dataType);
 
   const M = parameters.sequenceLength;
   const K = parameters.inputHiddenSize;
   const N = parameters.headSize;
+
+  const TILE_SIZE = 16;
+  const dispatch = {
+    x: Math.ceil(parameters.headSize / TILE_SIZE),
+    y: Math.ceil(parameters.sequenceLength / TILE_SIZE),
+    z: parameters.batchSize * parameters.numHeads
+  };
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${M}u;
@@ -465,6 +525,12 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const N: u32 = ${N}u;
   const numHeads: u32 = ${parameters.numHeads};
   const ldb = ${parameters.hiddenSize + parameters.hiddenSize + parameters.vHiddenSize}u;
+  const TILE_SIZE = ${TILE_SIZE}u;
+  
+  var<workgroup> tileInput: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileWeightQ: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileWeightK: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
+  var<workgroup> tileWeightV: array<${dataType}, ${TILE_SIZE * TILE_SIZE}>;
 
   @group(0) @binding(0) var<storage, read> input: array<${dataType}>;
   @group(0) @binding(1) var<storage, read> weight: array<${dataType}>;
@@ -473,39 +539,60 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   @group(0) @binding(4) var<storage, read_write> outputK: array<${dataType}>;
   @group(0) @binding(5) var<storage, read_write> outputV: array<${dataType}>;
 
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
-    let gemmSize = M * N;
-    let idxWoGemmSize = global_idx / gemmSize;
-    let batchIndex = idxWoGemmSize / numHeads;
-    let headIndex = idxWoGemmSize % numHeads;
+  @compute @workgroup_size(${TILE_SIZE}, ${TILE_SIZE}, 1)
+  fn main(@builtin(workgroup_id) workgroup_id : vec3<u32>,
+   @builtin(local_invocation_id) local_id : vec3<u32>, @builtin(local_invocation_index) local_index : u32) {
+   let global_idx = (workgroup_id.z * ${dispatch.x * dispatch.y}u +
+          workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
-    let gemmOffset = global_idx % gemmSize;
-    let m = gemmOffset / N;
-    let n = gemmOffset % N;
+    let batchIndex = workgroup_id.z / ${parameters.batchSize};
+    let headNumber = workgroup_id.z % ${parameters.batchSize};
+    let m = workgroup_id.y * TILE_SIZE + local_id.y;
+    let n = workgroup_id.x * TILE_SIZE + local_id.x;
 
     let inputOffset = batchIndex * ${parameters.sequenceLength * parameters.inputHiddenSize} + m * K;
-    let biasOffsetQ = headIndex * ${parameters.headSize};
+    let biasOffsetQ = headNumber * ${parameters.headSize};
     let biasOffsetK = ${parameters.hiddenSize} + biasOffsetQ;
     let biasOffsetV = ${parameters.hiddenSize} + biasOffsetK;
 
-    var value = vec3<${dataType}>(0, 0, 0);
-    for (var k: u32 = 0u; k<${K}u; k++) {
-      let a = input[k + inputOffset];
-      let itemWeightOffset = k * ldb + n;
-      value[0] += a * weight[itemWeightOffset + biasOffsetQ];
-      value[1] += a * weight[itemWeightOffset + biasOffsetK];
-      value[2] += a * weight[itemWeightOffset + biasOffsetV];
+    var valueQ = ${dataType}(0);
+    var valueK = ${dataType}(0);
+    var valueV = ${dataType}(0);
+    for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
+      if (m < M && w + local_id.x < K) {
+        tileInput[TILE_SIZE * local_id.y + local_id.x] = input[inputOffset + w + local_id.x];
+      }
+      if (n < N && w + local_id.y < K) {
+        tileWeightQ[TILE_SIZE * local_id.y + local_id.x] = weight[biasOffsetQ + (w + local_id.y) * ldb];
+      }
+      if (n < N && w + local_id.y < K) {
+        tileWeightK[TILE_SIZE * local_id.y + local_id.x] = weight[biasOffsetK + (w + local_id.y) * ldb];
+      }
+      if (n < N && w + local_id.y < K) {
+        tileWeightV[TILE_SIZE * local_id.y + local_id.x] = weight[biasOffsetK + (w + local_id.y) * ldb];
+      }
+      workgroupBarrier();
+      for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
+        valueQ += tileInput[TILE_SIZE * local_id.y + k] * tileWeightQ[TILE_SIZE * k + local_id.x];
+        valueK += tileInput[TILE_SIZE * local_id.y + k] * tileWeightK[TILE_SIZE * k + local_id.x];
+        valueV += tileInput[TILE_SIZE * local_id.y + k] * tileWeightV[TILE_SIZE * k + local_id.x];
+      }
+
+      workgroupBarrier();
     }
 
-    let headOffset = gemmOffset % ${parameters.headSize};
-    value[0] += bias[headOffset + biasOffsetQ];
-    value[1] += bias[headOffset + biasOffsetK];
-    value[2] += bias[headOffset + biasOffsetV];
+    let headOffset = (m * N + n) % ${parameters.headSize};
+    valueQ += bias[headOffset + biasOffsetQ];
+    valueK += bias[headOffset + biasOffsetK];
+    valueV += bias[headOffset + biasOffsetV];
 
-    outputQ[global_idx] = value[0];
-    outputK[global_idx] = value[1];
-    outputV[global_idx] = value[2];
+    let offset = workgroup_id.z * M * N;
+    if (m < M && n < N) {
+      let outputIdx = offset + m * N + n;
+      outputQ[outputIdx] = valueQ;
+      outputK[outputIdx] = valueK;
+      outputV[outputIdx] = valueV;
+    }
   }`;
 
   const inputTypes = [GpuDataType.default, GpuDataType.default, GpuDataType.default];
@@ -522,7 +609,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
         {dims: outputShape, dataType: context.inputs[0].dataType, gpuDataType: GpuDataType.default},
       ],
       getShaderSource,
-      dispatchGroup: () => ({x: Math.ceil(unitsOfWork / 64 /* workgroup size */)})
+      dispatchGroup: () => (dispatch)
     },
     {inputs, outputs: [-1, -1, -1]});
 };
