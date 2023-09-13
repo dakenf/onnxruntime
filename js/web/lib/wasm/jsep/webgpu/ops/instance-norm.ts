@@ -195,12 +195,12 @@ const createInstanceNormNHWCProgramInfo =
       attributes: InstanceNormAttributes) => {
       const xShape = inputs[0].dims;
       const outputShape = xShape;
-      const outputSize = ShapeUtil.size(outputShape);
       const N = xShape[0];
       const C = xShape[xShape.length - 1];
       const H = ShapeUtil.sizeFromDimension(xShape, 1) / C;
 
       const components = getMaxComponents(C);
+      const outputSize = ShapeUtil.size(outputShape) / components;
       const inputHelper = inputVariable('input', inputs[0].dataType, inputs[0].dims, components);
       const outputHelper = outputVariable('output', inputs[0].dataType, outputShape, components);
 

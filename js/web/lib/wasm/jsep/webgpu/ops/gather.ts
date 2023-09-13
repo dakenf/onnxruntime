@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common';
-import {TensorView} from '../../tensor';
-import {ShapeUtil} from '../../util';
-import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-with-cache-key';
-import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
+import { DataType } from '../../../wasm-common'
+import { TensorView } from '../../tensor'
+import { ShapeUtil } from '../../util'
+import { AttributeWithCacheKey, createAttributeWithCacheKey } from '../attribute-with-cache-key'
+import { ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata } from '../types'
 
-import {ShaderHelper} from './common';
+import { getMaxComponents, inputVariable, outputVariable, ShaderHelper } from './common'
 
 export interface GatherAttributes extends AttributeWithCacheKey {
   axis: number;
@@ -32,17 +32,34 @@ const createGatherProgramInfo =
 
       const inputDataType = inputs[0].dataType;
       const block = ShapeUtil.sizeFromDimension(inputShape, axis + 1);
-      const elementSize = [DataType.int64, DataType.uint64, DataType.double].includes(inputDataType) ? 2 : 1;
+      let elementSize = [DataType.int64, DataType.uint64, DataType.double].includes(inputDataType) ? 2 : 1;
       const indicesElementSize = inputs[1].dataType === DataType.int64 ? 2 : 1;
+
+      // for f16 when block size is odd, we'll use single f16
+      // when it's odd just one u32
+      let gatherType = DataType.uint32;
+      if (inputDataType === DataType.float16) {
+        if (block % 2 === 0) {
+          elementSize = 2;
+        } else {
+          gatherType = DataType.float16;
+        }
+      }
       const blockSize = elementSize * block;
+      const components = getMaxComponents(blockSize);
+
+      const input = inputVariable('input', gatherType, inputShape, components);
+      const indices = inputVariable('inputIndices', DataType.int32, indicesShape);
+      const output = outputVariable('output', gatherType, outputShape, components);
+
       const M = ShapeUtil.sizeToDimension(inputShape, axis);
       const N = ShapeUtil.size(indicesShape);
-      const dataBatchElements = ShapeUtil.sizeFromDimension(inputShape, axis) * elementSize;
-      const gatheredBatchElements = N * block * elementSize;
+      const dataBatchElements = ShapeUtil.sizeFromDimension(inputShape, axis) * elementSize / components;
+      const gatheredBatchElements = N * block * elementSize / components;
       const axisDimLimit = inputShape[axis];
 
-      const inputSize = ShapeUtil.size(inputShape) * elementSize;
-      const outputSize = ShapeUtil.size(outputShape) * elementSize;
+      const inputSize = ShapeUtil.size(inputShape) * elementSize / components;
+      const outputSize = ShapeUtil.size(outputShape) * elementSize / components;
 
       const totalGathers = M * N;
       // int64 indices would be treated as little endian i32 with assumption they fall in i32 limits
@@ -52,10 +69,9 @@ const createGatherProgramInfo =
   const N: u32 = ${N};
   const elementSize: u32 = ${elementSize};
   const indicesElementSize: u32 = ${indicesElementSize};
+  const blockSize = ${blockSize / components};
 
-  @group(0) @binding(0) var<storage, read> input : array<u32>;
-  @group(0) @binding(1) var<storage, read> inputIndices : array<i32>;
-  @group(0) @binding(2) var<storage, read_write> output: array<u32>;
+  ${shaderHelper.declareVariables(input, indices, output)}
 
   ${shaderHelper.mainStart()}
     let batch: u32 = global_idx / N;
@@ -68,15 +84,15 @@ const createGatherProgramInfo =
         idx = idx + ${axisDimLimit};
     }
 
-    let srcOffset = srcOffsetBatch + u32(idx) * ${blockSize};
-    let dstOffset = dstOffsetBatch + i * ${blockSize};
+    let srcOffset = srcOffsetBatch + u32(idx) * blockSize;
+    let dstOffset = dstOffsetBatch + i * blockSize;
     if (srcOffset >= ${inputSize}) {
         return;
     }
     if (dstOffset >= ${outputSize}) {
         return;
     }
-    for (var j: u32 = 0; j < ${blockSize}; j++) {
+    for (var j: u32 = 0; j < blockSize; j++) {
         output[dstOffset + j] = input[srcOffset + j];
     }
   }`;

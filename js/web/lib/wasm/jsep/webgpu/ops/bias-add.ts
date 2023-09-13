@@ -32,11 +32,10 @@ const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly Te
   // since channel number can be only 320/640/1280, it's always divisable by 4
   const outputSize = ShapeUtil.size(outputShape) / 4;
 
-  const dataType = inputs[0].dataType;
-  const input = inputVariable('input', dataType, outputShape, 4);
-  const bias = inputVariable('bias', dataType, [channels], 4);
-  const residual = inputVariable('residual', dataType, outputShape, 4);
-  const output = outputVariable('output', dataType, outputShape, 4);
+  const input = inputVariable('input', inputs[0].dataType, outputShape, 4);
+  const bias = inputVariable('bias', inputs[1].dataType, [channels], 4);
+  const residual = inputVariable('residual', inputs[1].dataType, outputShape, 4);
+  const output = outputVariable('output', inputs[0].dataType, outputShape, 4);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const channels = ${channels}u / 4;
