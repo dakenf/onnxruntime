@@ -220,6 +220,7 @@ const createConvTranspose2DProgramInfoLoader =
      squeezeOutputShapeFunction?: (shape: readonly number[]) => number[]): ProgramInfoLoader => {
       const hasBias = inputs.length === 3;
       const metadata = createConvTranspose2DProgramMetadata(hasBias, attributes.cacheKey);
+      console.log('conv transpose!')
       return {
         ...metadata,
         get: () => createConvTranspose2DProgramInfo(inputs, metadata, attributes, squeezeOutputShapeFunction)

@@ -39,7 +39,7 @@ const conv2dCommonSnippet =
           case 1:
             return 'resData = x[xIndex];';
           case 3:
-            return 'resData = vec3<f32>(x[xIndex], x[xIndex + 1], x[xIndex + 2]);';
+            return `resData = vec3<${dataType}>(x[xIndex], x[xIndex + 1], x[xIndex + 2]);`;
           case 4:
             return 'resData = x[xIndex / 4];';
           default:
