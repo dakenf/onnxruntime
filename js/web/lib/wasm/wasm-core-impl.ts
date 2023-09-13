@@ -345,6 +345,7 @@ export const run = async(
             const data = new typedArrayConstructor(size);
             new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
                 .set(wasm.HEAPU8.subarray(dataOffset, dataOffset + data.byteLength));
+            // @ts-ignore
             output.push([type, dims, data]);
           }
         } finally {

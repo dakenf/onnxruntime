@@ -1,9 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { Float16Array } from '@petamoriken/float16';
+
 export declare namespace Tensor {
   export interface DataTypeMap {
     bool: Uint8Array;
+    float16: Float16Array;
     float32: Float32Array;
     float64: Float64Array;
     string: string[];
@@ -24,7 +27,7 @@ export declare namespace Tensor {
   export type IntegerType = Tensor.DataTypeMap['int8']|Tensor.DataTypeMap['uint8']|Tensor.DataTypeMap['int16']|
                             Tensor.DataTypeMap['uint16']|Tensor.DataTypeMap['int32']|Tensor.DataTypeMap['uint32']|
                             Tensor.DataTypeMap['int64']|Tensor.DataTypeMap['uint64'];
-  export type FloatType = Tensor.DataTypeMap['float32']|Tensor.DataTypeMap['float64'];
+  export type FloatType = Tensor.DataTypeMap['float32']|Tensor.DataTypeMap['float64']|Tensor.DataTypeMap['float16'];
   export type NumberType = BooleanType|IntegerType|FloatType;
 
   export type Id = number;
@@ -71,6 +74,8 @@ const dataviewConstructor = (type: Tensor.DataType) => {
       return BigInt64Array;
     case 'uint64':
       return BigUint64Array;
+    case 'float16':
+      return Float16Array;
     case 'float32':
       return Float32Array;
     case 'float64':
@@ -82,7 +87,7 @@ const dataviewConstructor = (type: Tensor.DataType) => {
 };
 
 export const createView = (dataBuffer: ArrayBuffer, type: Tensor.DataType): Int32Array|Uint32Array|BigInt64Array|
-    BigUint64Array|Uint8Array|Float32Array|Float64Array|Int8Array|Int16Array|Uint16Array =>
+    BigUint64Array|Uint8Array|Float32Array|Float64Array|Int8Array|Int16Array|Uint16Array|Float16Array =>
         new (dataviewConstructor(type))(dataBuffer);
 
 /**

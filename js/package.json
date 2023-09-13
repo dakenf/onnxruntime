@@ -40,5 +40,8 @@
     "prepare-node-tests": "node ./scripts/prepare-onnx-node-tests",
     "update-version": "node ./scripts/update-version"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@petamoriken/float16": "^3.8.3"
+  }
 }

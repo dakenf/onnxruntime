@@ -18,6 +18,7 @@ import {tensorDataTypeStringToEnum} from '../lib/wasm/wasm-common';
 
 import {base64toBuffer, createMockGraph, readFile} from './test-shared';
 import {Test} from './test-types';
+import { Float16Array } from '@petamoriken/float16';
 
 // import {listSupportedBackends, onnxruntimeBackend} from '../../node/lib/backend';
 // const backends = listSupportedBackends();
@@ -383,11 +384,12 @@ export class TensorResultValidator {
       case 'string':
         return this.strictEqual(actual.stringData, expected.stringData);
 
+      case 'float16':
       case 'float32':
       case 'float64':
         return this.floatEqual(
-            actual.numberData as number[] | Float32Array | Float64Array,
-            expected.numberData as number[] | Float32Array | Float64Array);
+            actual.numberData as number[] | Float32Array | Float64Array | Float16Array,
+            expected.numberData as number[] | Float32Array | Float64Array | Float16Array);
 
       case 'uint8':
       case 'int8':
@@ -415,7 +417,7 @@ export class TensorResultValidator {
       return false;
     }
   }
-  floatEqual(actual: number[]|Float32Array|Float64Array, expected: number[]|Float32Array|Float64Array): boolean {
+  floatEqual(actual: number[]|Float32Array|Float64Array|Float16Array, expected: number[]|Float32Array|Float64Array|Float16Array): boolean {
     if (actual.length !== expected.length) {
       return false;
     }

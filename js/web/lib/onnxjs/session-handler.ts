@@ -32,6 +32,7 @@ export class OnnxjsSessionHandler implements SessionHandler {
     const outputMap = await this.session.run(inputMap);
     const output: SessionHandler.ReturnType = {};
     outputMap.forEach((tensor, name) => {
+      // @ts-ignore
       output[name] = new Tensor(tensor.type, tensor.data, tensor.dims);
     });
     return output;

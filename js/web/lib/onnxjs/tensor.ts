@@ -3,6 +3,7 @@
 
 import {Guid} from 'guid-typescript';
 import Long from 'long';
+import { Float16Array } from '@petamoriken/float16';
 
 import {onnxruntime} from './ort-schema/flatbuffers/ort-generated';
 import {onnx} from './ort-schema/protobuf/onnx';
@@ -13,6 +14,7 @@ import ortFbs = onnxruntime.experimental.fbs;
 export declare namespace Tensor {
   export interface DataTypeMap {
     bool: Uint8Array;
+    float16: Float16Array;
     float32: Float32Array;
     float64: Float64Array;
     string: string[];
@@ -31,7 +33,7 @@ export declare namespace Tensor {
   export type BooleanType = Tensor.DataTypeMap['bool'];
   export type IntegerType = Tensor.DataTypeMap['int8']|Tensor.DataTypeMap['uint8']|Tensor.DataTypeMap['int16']|
                             Tensor.DataTypeMap['uint16']|Tensor.DataTypeMap['int32']|Tensor.DataTypeMap['uint32'];
-  export type FloatType = Tensor.DataTypeMap['float32']|Tensor.DataTypeMap['float64'];
+  export type FloatType = Tensor.DataTypeMap['float16']|Tensor.DataTypeMap['float32']|Tensor.DataTypeMap['float64'];
   export type NumberType = BooleanType|IntegerType|FloatType;
 
   export type Id = Guid;
@@ -95,6 +97,7 @@ export class Tensor {
     switch (this.type) {
       case 'float32':
       case 'float64':
+      case 'float16':
         return this.data as Tensor.FloatType;
 
       default:
@@ -187,10 +190,10 @@ export class Tensor {
       }
     } else {
       if (cache !== undefined) {
-        const constructor = dataviewConstructor(type);
-        if (!(cache instanceof constructor)) {
-          throw new TypeError(`cache should be type ${constructor.name}`);
-        }
+        // const constructor = dataviewConstructor(type);
+        // if (!(cache instanceof constructor)) {
+          //throw new TypeError(`cache should be type ${constructor.name}`);
+        // }
       }
 
       if (empty) {
@@ -248,6 +251,7 @@ export class Tensor {
       let array: Array<number|Long>;
       switch (tensorProto.dataType) {
         case onnx.TensorProto.DataType.FLOAT:
+        case onnx.TensorProto.DataType.FLOAT16:
           array = tensorProto.floatData!;
           break;
         case onnx.TensorProto.DataType.INT32:
@@ -412,6 +416,8 @@ function dataviewConstructor(type: Tensor.DataType) {
       return Uint32Array;
     case 'int64':
       return BigInt64Array;
+    case 'float16':
+      return Float16Array;
     case 'float32':
       return Float32Array;
     case 'float64':

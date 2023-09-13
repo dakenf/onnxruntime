@@ -2,10 +2,11 @@
 // Licensed under the MIT License.
 
 import {Tensor} from './tensor.js';
+import { Float16Array, Float16ArrayConstructor } from '@petamoriken/float16';
 
 export type SupportedTypedArrayConstructors = Float32ArrayConstructor|Uint8ArrayConstructor|Int8ArrayConstructor|
     Uint16ArrayConstructor|Int16ArrayConstructor|Int32ArrayConstructor|BigInt64ArrayConstructor|Uint8ArrayConstructor|
-    Float64ArrayConstructor|Uint32ArrayConstructor|BigUint64ArrayConstructor;
+    Float64ArrayConstructor|Uint32ArrayConstructor|BigUint64ArrayConstructor|Float16ArrayConstructor;
 export type SupportedTypedArray = InstanceType<SupportedTypedArrayConstructors>;
 
 // a runtime map that maps type string to TypedArray constructor. Should match Tensor.DataTypeMap.
@@ -14,7 +15,7 @@ export const NUMERIC_TENSOR_TYPE_TO_TYPEDARRAY_MAP = new Map<string, SupportedTy
   ['uint8', Uint8Array],
   ['int8', Int8Array],
   ['uint16', Uint16Array],
-  ['float16', Uint16Array],
+  ['float16', Float16Array],
   ['int16', Int16Array],
   ['int32', Int32Array],
   ['bool', Uint8Array],
@@ -24,6 +25,7 @@ export const NUMERIC_TENSOR_TYPE_TO_TYPEDARRAY_MAP = new Map<string, SupportedTy
 
 // a runtime map that maps type string to TypedArray constructor. Should match Tensor.DataTypeMap.
 export const NUMERIC_TENSOR_TYPEDARRAY_TO_TYPE_MAP = new Map<SupportedTypedArrayConstructors, Tensor.Type>([
+  [Float16Array, 'float16'],
   [Float32Array, 'float32'],
   [Uint8Array, 'uint8'],
   [Int8Array, 'int8'],

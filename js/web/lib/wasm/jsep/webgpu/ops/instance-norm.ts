@@ -87,12 +87,12 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
   const inputHelper = inputVariable('input', input.dataType, input.dims, components);
   const scaleHelper = inputVariable('scale', scale.dataType, scale.dims, components);
   const biasHelper = inputVariable('bias', bias.dataType, bias.dims, components);
-  const dataType = tensorTypeToWsglStorageType(input.dataType);
 
   const WG = 64;
   // we will store channel scale and channel shift in [2, components] matrix
   // or in vec2 when components == 1
-  const outputType = components === 1 ? `vec2<${dataType}>` : `mat2x${components}<${dataType}>`;
+  const outputType = components === 1 ? `vec2f` : `mat2x${components}f`;
+  const sumCastType = components === 1 ? `f32` : `vec${components}f`;
   const setOutputValue = (var1: string, var2: string) => {
     return `${outputType}(${var1}, ${var2})`;
   };
@@ -118,16 +118,13 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
     let wgMax = min(wgOffset + ${wgSize}, H);
 
     let offset = currentImageNumber * imageSize + currentChannelNumber;
-    var sum: ${inputHelper.type.storage} = ${fillVector(dataType, components)};
-    var squaredSum: ${inputHelper.type.storage} = ${fillVector(dataType, components)};
+    var sum = ${fillVector('f32', components)};
+    var squaredSum = ${fillVector('f32', components)};
     for (var i: u32 = wgOffset; i < wgMax; i++) {
-        let value = input[offset + i * C];
+        let value = ${sumCastType}(input[offset + i * C]);
         sum += value;
         squaredSum += value * value;
     }
-    // we need to divide it here to avoid fp16 overflow
-    sum = sum / ${wgSize};
-    squaredSum = squaredSum / ${wgSize};
     output[global_idx] = ${setOutputValue('sum', 'squaredSum')};
   }`;
 
@@ -147,7 +144,7 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
   const H: u32 = ${h};
   const C: u32 = ${c / components};
   const imageSize: u32 = ${WG * c / components};
-  const epsilon: ${dataType} = ${epsilon};
+  const epsilon: f32 = ${epsilon};
 
   @group(0) @binding(0) var<storage, read> input : array<${outputType}>;
   @group(0) @binding(1) var<storage, read> scale : array<${scaleHelper.type.storage}>;
@@ -160,18 +157,18 @@ const computeMean = (context: ComputeContext, input: TensorView, scale: TensorVi
     let currentChannelNumber = global_idx % C;
 
     let offset = currentImageNumber * imageSize;
-    var sum: ${inputHelper.type.storage} = ${fillVector(dataType, components)};
-    var squaredSum: ${inputHelper.type.storage} = ${fillVector(dataType, components)};
+    var sum = ${fillVector('f32', components)};
+    var squaredSum = ${fillVector('f32', components)};
     for (var i: u32 = 0; i < ${WG}; i++) {
         let value = input[offset + i + currentChannelNumber * ${WG}];
         sum += value[0];
         squaredSum += value[1];
     }
-    sum = sum / ${h / wgSize};
-    squaredSum = squaredSum / ${h / wgSize};
+    sum = sum / f32(H);
+    squaredSum = squaredSum / f32(H);
     let invStdDev = 1 / sqrt(squaredSum - sum * sum + epsilon);
-    let channelScale = invStdDev * scale[currentChannelNumber];
-    let channelShift = bias[currentChannelNumber] - sum * channelScale;
+    let channelScale = invStdDev * ${sumCastType}(scale[currentChannelNumber]);
+    let channelShift = ${sumCastType}(bias[currentChannelNumber]) - sum * channelScale;
 
     output[global_idx] = ${setOutputValue('channelScale', 'channelShift')};
   }`;
@@ -205,7 +202,8 @@ const createInstanceNormNHWCProgramInfo =
       const outputHelper = outputVariable('output', inputs[0].dataType, outputShape, components);
 
       const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
-      const scaleType = components === 1 ? `vec2<${dataType}>` : `mat2x${components}<${dataType}>`;
+      const scaleType = components === 1 ? `vec2f` : `mat2x${components}f`;
+      const scaleCastType = components === 1 ? dataType : `vec${components}<${dataType}>`;
       // first compute mean
       const channelScaleShift = computeMean(context, inputs[0], inputs[1], inputs[2], N, H, C, attributes.epsilon);
 
@@ -223,7 +221,7 @@ const createInstanceNormNHWCProgramInfo =
 
     let scaleOffset = currentImageNumber * C + currentChannelNumber;
     let scale = scaleInput[scaleOffset];
-    output[global_idx] = fma(input[global_idx], scale[0], scale[1]);
+    output[global_idx] = fma(input[global_idx], ${scaleCastType}(scale[0]), ${scaleCastType}(scale[1]));
   }`;
       context.compute({
         ...metadata,

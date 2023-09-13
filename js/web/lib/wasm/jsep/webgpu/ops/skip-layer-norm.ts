@@ -13,6 +13,7 @@ import {
   outputVariable,
   ShaderHelper, sumVector, tensorTypeToWsglStorageType,
 } from './common';
+import { DataType } from '../../../wasm-common'
 
 export interface SkipLayerNormAttributes extends AttributeWithCacheKey {
   epsilon: number;
@@ -104,10 +105,10 @@ const createSkipLayerNormProgramInfo =
       }
       variables.push(outputVariable('output', inputs[0].dataType, outputShape, components));
       if (hasMeanOutput) {
-        variables.push(outputVariable('meanOutput', inputs[0].dataType, meanInvStdDevDim));
+        variables.push(outputVariable('meanOutput', DataType.float, meanInvStdDevDim));
       }
       if (hasInvStdDevOutput) {
-        variables.push(outputVariable('invStdOutput', inputs[0].dataType, meanInvStdDevDim));
+        variables.push(outputVariable('invStdOutput', DataType.float, meanInvStdDevDim));
       }
       if (hasInputSkipBiasSumOutput) {
         variables.push(outputVariable('inputSkipBiasSum', inputs[0].dataType, outputShape, components));
@@ -132,8 +133,8 @@ const createSkipLayerNormProgramInfo =
           let value = inputValue + skipValue + biasValue;
           ${hasInputSkipBiasSumOutput ? 'inputSkipBiasSum[offset + i] = value;' : ''}
           output[offset + i] = value;
-          sum += value;
-          squareSum += value * value;
+          sum += f32(value);
+          squareSum += f32(value) * f32(value);
         }
         let mean: ${dataType} = ${sumVector('sum', components)} / ${dataType}(hiddenSize);
         let variance: ${dataType} = sqrt(${sumVector('squareSum', components)} 

@@ -140,7 +140,7 @@ export class Tensor implements TensorInterface {
           if (typedArrayConstructor === undefined) {
             throw new TypeError(`Unsupported tensor type: ${arg0}.`);
           }
-          if (Array.isArray(arg1)) {
+          if (Array.isArray(arg1) || arg0 === 'float16') {
             if (arg0 === 'float16') {
               // Throw error here because when user try to use number array as data,
               // e.g. new Tensor('float16', [1, 2, 3, 4], dims)), it will actually call
