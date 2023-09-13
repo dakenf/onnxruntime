@@ -37,7 +37,7 @@ export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
         // https://github.com/WebAssembly/memory64/pull/39
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        index: 'u64',
+        index: 'i64',
         shared: true,
       });
       promises.push(streamResponseToBuffer(weightsResponse, weightsMemory.buffer, 0).then(() => weightsMemory.buffer));
