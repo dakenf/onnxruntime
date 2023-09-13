@@ -32,18 +32,12 @@ const createGatherProgramInfo =
 
       const inputDataType = inputs[0].dataType;
       const block = ShapeUtil.sizeFromDimension(inputShape, axis + 1);
-      let elementSize = [DataType.int64, DataType.uint64, DataType.double].includes(inputDataType) ? 2 : 1;
+      const elementSize = [DataType.int64, DataType.uint64, DataType.double].includes(inputDataType) ? 2 : 1;
       const indicesElementSize = inputs[1].dataType === DataType.int64 ? 2 : 1;
 
-      // for f16 when block size is odd, we'll use single f16
-      // when it's odd just one u32
       let gatherType = DataType.uint32;
       if (inputDataType === DataType.float16) {
-        if (block % 2 === 0) {
-          elementSize = 2;
-        } else {
-          gatherType = DataType.float16;
-        }
+        gatherType = DataType.float16;
       }
       const blockSize = elementSize * block;
       const components = getMaxComponents(blockSize);
