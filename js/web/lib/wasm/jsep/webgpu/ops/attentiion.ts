@@ -318,7 +318,7 @@ const computeAttentionProbs =
     const N = parameters.totalSequenceLength;
     const K = vectorizedHeadSize;
 
-    const TILE_SIZE = 16;
+    const TILE_SIZE = 8;
 
     const dispatch = {
       x: Math.ceil(parameters.totalSequenceLength / TILE_SIZE),
@@ -403,15 +403,13 @@ const computeAttentionProbs =
 const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: TensorView, params: AttentionParameters) => {
   const outputShape = [params.batchSize, params.numHeads, params.sequenceLength, params.vHeadSize];
 
-  const components = 1; //getMaxComponents(params.totalSequenceLength);
-  const probsHelper = inputVariable('probs', probs.dataType, probs.dims, components);
-  const vHelper = inputVariable('v', v.dataType, v.dims, components);
+  const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
+  const vHelper = inputVariable('v', v.dataType, v.dims);
   const output = outputVariable('output', probs.dataType, outputShape);
 
   const dataType = tensorTypeToWsglStorageType(probs.dataType);
 
-
-  const TILE_SIZE = 16;
+  const TILE_SIZE = 8;
   const dispatch = {
     x: Math.ceil(params.vHeadSize / TILE_SIZE),
     y: Math.ceil(params.sequenceLength / TILE_SIZE),
@@ -421,9 +419,10 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M: u32 = ${params.sequenceLength}u;
   const N: u32 = ${params.vHeadSize}u;
-  const K: u32 = ${params.totalSequenceLength / components}u;
+  const K: u32 = ${params.totalSequenceLength}u;
+  const numHeads: u32 = ${params.numHeads}u;
   const TILE_SIZE = ${TILE_SIZE}u;
-
+  
   var<workgroup> tileQ: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
   var<workgroup> tileK: array<${probsHelper.type.storage}, ${TILE_SIZE * TILE_SIZE}>;
 
@@ -436,33 +435,31 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
           workgroup_id.y * ${dispatch.x}u + workgroup_id.x) * ${TILE_SIZE * TILE_SIZE}u + local_index;
 
     let headIdx = workgroup_id.z;
-    let m = workgroup_id.y * TILE_SIZE;
-    let n = workgroup_id.x * TILE_SIZE;
-    let lm = m + local_id.y;
-    let ln = n + local_id.x;
+    let m = workgroup_id.y * TILE_SIZE + local_id.y;
+    let n = workgroup_id.x * TILE_SIZE + local_id.x;
 
     let offsetA = headIdx * (M * K) + m * K;
     let offsetB = headIdx * (N * K) + n;
 
-    var value = ${fillVector(dataType, components)};
+    var value = ${dataType}(0);
     for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
-      if (m + local_id.y < M && w + local_id.x < K) {
-        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + local_id.y * K + w + local_id.x];
+      if (m < M && w + local_id.x < K) {
+        tileQ[TILE_SIZE * local_id.y + local_id.x] = probs[offsetA + w + local_id.x];
       }
-      if (n + local_id.y < N && w + local_id.x < K) {
-        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + local_id.y * K + w + local_id.x];
+      if (n < N && w + local_id.y < K) {
+        tileK[TILE_SIZE * local_id.y + local_id.x] = v[offsetB + (w + local_id.y) * N];
       }
       workgroupBarrier();
       for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
-        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * local_id.x + k];
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * k + local_id.x];
       }
 
       workgroupBarrier();
     }
     let headOffset = headIdx * M * N;
-    if (lm < M && ln < N) {
-      let outputIdx = headOffset + lm * N + ln;
-      output[outputIdx] = ${sumVector('value', components)};
+    if (m < M && n < N) {
+      let outputIdx = headOffset + m * N + n;
+      output[outputIdx] = value;
     }
   }`;
 
@@ -513,7 +510,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const K = parameters.inputHiddenSize;
   const N = parameters.headSize;
 
-  const TILE_SIZE = 16;
+  const TILE_SIZE = 8;
   const dispatch = {
     x: Math.ceil(parameters.headSize / TILE_SIZE),
     y: Math.ceil(parameters.sequenceLength / TILE_SIZE),
@@ -582,7 +579,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
       workgroupBarrier();
     }
 
-    let headOffset = (m * K + n) % ${parameters.headSize};
+    let headOffset = (m * N + n) % ${parameters.headSize};
     valueQ += bias[headOffset + biasOffsetQ];
     valueK += bias[headOffset + biasOffsetK];
     valueV += bias[headOffset + biasOffsetV];
@@ -592,9 +589,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
       let outputIdx = offset + m * N + n;
       outputQ[outputIdx] = valueQ;
       outputK[outputIdx] = valueK;
-      // transpose V to use vec4 optimizations in compute score
-      let outputIdxV = offset + n * M + m;
-      outputV[outputIdxV] = valueV;
+      outputV[outputIdx] = valueV;
     }
   }`;
 

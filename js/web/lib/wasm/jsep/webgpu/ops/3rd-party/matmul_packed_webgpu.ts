@@ -441,10 +441,7 @@ export const createMatmulProgramInfo =
       const dimAOuter = aShape[aShape.length - 2];
       const dimInner = aShape[aShape.length - 1];
       const dimBOuter = bShape[bShape.length - 1];
-      // const isVec4 = dimInner % 4 === 0 && dimBOuter % 4 === 0;
-      // TODO: There is bug for input[0]:1,56x56,96, input[1]:1,96,24 in vec4 version.
-      const isVec4 = false;
-      const component = isVec4 ? 4 : 1;
+      const isVec4 = dimInner % 4 === 0 && dimBOuter % 4 === 0;
       const {activationFunction, applyActivation} = getActicationSnippet(activationAttributes);
 
       // TODO: fine tune size
@@ -467,7 +464,7 @@ export const createMatmulProgramInfo =
       variables.push(output);
       const inputVariables = [A, B];
       const hasBias = inputs.length > 2;
-      const declareFunctions = matMulReadWriteFnSource(component, hasBias, applyActivation, variables);
+      const declareFunctions = matMulReadWriteFnSource(components, hasBias, applyActivation, variables);
       if (hasBias) {
         inputVariables.push(inputVariable('bias', inputs[2].dataType, [dimBOuter / components], components));
       }
