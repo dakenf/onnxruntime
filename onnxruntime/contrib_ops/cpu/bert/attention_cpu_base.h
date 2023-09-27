@@ -200,12 +200,24 @@ class AttentionCPUBase : public AttentionBase {
       });
     }
 
+    std::cout << "Probs before softmax.";
+    for (size_t i = 0; i < total_sequence_length * sequence_length * batch_size * num_heads_; ++i) {
+      std::cout << attention_probs[i] << " ";
+    }
+    std::cout << std::endl;
+
     // attention_probs(B, N, S, T) = Softmax(attention_probs)
     {
       const int N = batch_size * num_heads_ * sequence_length;
       const int D = total_sequence_length;
       ComputeAttentionSoftmaxInplace(attention_probs, N, D, tp);
     }
+
+    std::cout << "Probs after softmax.";
+    for (size_t i = 0; i < total_sequence_length * sequence_length * batch_size * num_heads_; ++i) {
+      std::cout << attention_probs[i] << " ";
+    }
+    std::cout << std::endl;
   }
 
   template <typename T>
