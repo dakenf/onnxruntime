@@ -15,7 +15,6 @@ import {
   sumVector,
   tensorTypeToWsglStorageType
 } from './common';
-import {transposeProgramMetadata} from './transpose';
 
 export enum AttentionQkvFormat {
   unknown,               // enum value not set, or depends on qkv projection implementation details
@@ -385,7 +384,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
   const TILE_SIZE = 8;
   const dispatch = {
     x: Math.ceil(params.vHeadSize / TILE_SIZE),
-    y: Math.ceil(params.totalSequenceLength / TILE_SIZE),
+    y: Math.ceil(params.sequenceLength / TILE_SIZE),
     z: params.batchSize * params.numHeads,
   };
 
@@ -430,9 +429,11 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
 
       workgroupBarrier();
     }
-    let headOffset = headIdx * M * N;
+let batchIdx = workgroup_id.z / ${params.numHeads};
+    let currentBatchHeadNumber = workgroup_id.z % ${params.numHeads};
+    let headOffset = (batchIdx * M * ${params.numHeads} + currentBatchHeadNumber) * ${params.vHeadSize};
     if (lm < M && ln < N) {
-      let outputIdx = headOffset + lm * N + ln;
+      let outputIdx = batchIdx * ${params.sequenceLength * params.vHiddenSize} + lm * ${params.vHiddenSize} + currentBatchHeadNumber * ${params.vHeadSize} + ln;
       output[outputIdx] = ${sumVector('value', components)};
     }
   }`;
@@ -457,41 +458,37 @@ export const applyAttention =
 
     computeVxAttentionScore(context, probs, v, parameters);
     // const attentionResult = computeVxAttentionScore(context, probs, v, parameters);
-    //
-    // const outputShape = [parameters.batchSize, parameters.sequenceLength, parameters.vHiddenSize];
-    // const input = inputVariable('input', q.dataType, attentionResult.dims);
-    // const output = outputVariable('output', q.dataType, outputShape);
-    // const getShaderSource = (shaderHelper: ShaderHelper) => `
-    // ${shaderHelper.declareVariables(input, output)}
-    //
-    // ${shaderHelper.mainStart(parameters.numHeads * parameters.batchSize)}
-    //   let headOffset = global_idx % ${parameters.vHeadSize};
-    //   let sequenceIndex = (global_idx / ${parameters.vHeadSize}) % ${parameters.sequenceLength};
-    //   let batchIndex = global_idx / ${parameters.numHeads};
-    //   let headIndex = global_idx % ${parameters.numHeads};
-    //   // let in = input[0];
-    //
-    //   var inputOffset = ${parameters.sequenceLength * parameters.vHeadSize} * global_idx;
-    //   var outputOffset = (batchIndex * ${parameters.sequenceLength * parameters.numHeads} + headIndex)
-    //     * ${parameters.vHeadSize};
-    //   for (var j = 0; j < ${parameters.sequenceLength}; j++) {
-    //     for (var i: u32 = 0; i < ${parameters.vHeadSize}; i++) {
-    //       output[outputOffset + i] = input[inputOffset + i];
-    //     }
-    //     inputOffset += ${parameters.vHeadSize};
-    //     outputOffset += ${parameters.vHiddenSize};
-    //   }
-    // }`;
-    //
-    // context.compute(
-    //   {
-    //     ...transposeProgramMetadata,
-    //     cacheHint: JSON.stringify(parameters),
-    //     outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
-    //     getShaderSource,
-    //     dispatchGroup: () => ({ x: 1 }),
-    //   },
-    //   {inputs: [attentionResult], outputs: [0]});
+
+//     const outputShape = [parameters.batchSize, parameters.sequenceLength, parameters.vHiddenSize];
+//     const input = inputVariable('input', q.dataType, attentionResult.dims);
+//     const output = outputVariable('output', q.dataType, outputShape);
+//     const outputSize = parameters.batchSize * parameters.sequenceLength * parameters.vHeadSize * parameters.numHeads;
+//     const getShaderSource = (shaderHelper: ShaderHelper) => `
+//     ${shaderHelper.declareVariables(input, output)}
+//
+//     ${shaderHelper.mainStart()}
+//       ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
+// let h = global_idx % ${parameters.vHeadSize};
+// let n = (global_idx / ${parameters.vHeadSize}) % ${parameters.sequenceLength};
+// let s = (global_idx / (${parameters.vHeadSize * parameters.numHeads})) % ${parameters.sequenceLength};
+// let b = global_idx / (${parameters.vHeadSize * parameters.sequenceLength * parameters.numHeads});
+//
+// var inputOffset = b * ${parameters.numHeads * parameters.sequenceLength * parameters.vHeadSize} + n * ${parameters.sequenceLength * parameters.vHeadSize} + s * ${parameters.vHeadSize} + h;
+// var outputOffset = b * ${parameters.sequenceLength * parameters.vHiddenSize} + s * ${parameters.vHiddenSize} + n * ${parameters.vHeadSize} + h;
+//
+// output[outputOffset] = input[inputOffset];
+//     }`;
+//
+//     context.compute(
+//       {
+//         name: 'AttentionTranspose',
+//         cacheHint: JSON.stringify(parameters),
+//         inputTypes: [GpuDataType.default],
+//         outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+//         getShaderSource,
+//         dispatchGroup: () => ({ x: Math.ceil(outputSize / 64) }),
+//       },
+//       {inputs: [attentionResult], outputs: [0]});
   };
 
 const prepare = (context: ComputeContext, parameters: AttentionParameters, attributes: AttentionAttrs) => {

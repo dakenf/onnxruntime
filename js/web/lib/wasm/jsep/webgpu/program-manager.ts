@@ -57,40 +57,40 @@ export class ProgramManager {
 
     this.backend.pendingDispatchNumber++;
 
-    this.backend.endComputePass();
-    const kernelId = this.backend.currentKernelId!;
-    const kernelName = this.backend.kernels.get(kernelId)![0];
-    for (const output of outputs) {
-      const stagingBuffer = this.backend.device.createBuffer({
-        size: output.buffer.size,
-        // eslint-disable-next-line no-bitwise
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-      });
-
-      const commandEncoder = this.backend.getCommandEncoder();
-      commandEncoder?.copyBufferToBuffer(
-          output.buffer,
-          0,  // Source offset
-          stagingBuffer,
-          0,  // Destination offset
-          output.buffer.size,
-      );
-      this.backend.flush();
-
-      stagingBuffer
-          .mapAsync(
-              GPUMapMode.READ,
-              0,  // Offset
-              output.buffer.size,
-              )
-          .then(() => {
-            const copyArrayBuffer = stagingBuffer.getMappedRange(0, output.buffer.size);
-            const data = copyArrayBuffer.slice(0);
-            stagingBuffer.unmap();
-            console.log(`${kernelId}|${kernelName}:`);
-            console.log(new Float32Array(data));
-          });
-    }
+    // this.backend.endComputePass();
+    // const kernelId = this.backend.currentKernelId!;
+    // const kernelName = this.backend.kernels.get(kernelId)![0];
+    // for (const output of outputs) {
+    //   const stagingBuffer = this.backend.device.createBuffer({
+    //     size: output.buffer.size,
+    //     // eslint-disable-next-line no-bitwise
+    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    //   });
+    //
+    //   const commandEncoder = this.backend.getCommandEncoder();
+    //   commandEncoder?.copyBufferToBuffer(
+    //       output.buffer,
+    //       0,  // Source offset
+    //       stagingBuffer,
+    //       0,  // Destination offset
+    //       output.buffer.size,
+    //   );
+    //   this.backend.flush();
+    //
+    //   stagingBuffer
+    //       .mapAsync(
+    //           GPUMapMode.READ,
+    //           0,  // Offset
+    //           output.buffer.size,
+    //           )
+    //       .then(() => {
+    //         const copyArrayBuffer = stagingBuffer.getMappedRange(0, output.buffer.size);
+    //         const data = copyArrayBuffer.slice(0);
+    //         stagingBuffer.unmap();
+    //         console.log(`${kernelId}|${kernelName}:`);
+    //         console.log(new Float32Array(data));
+    //       });
+    // }
 
     if (profilingEnabled) {
       // profiling write end timestamp

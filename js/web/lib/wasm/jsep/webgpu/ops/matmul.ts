@@ -12,19 +12,20 @@ import {InternalActivationAttributes} from './fuse-utils';
 const createMatmulProgramMetadata = (hasBias: boolean, cacheHint: string) => ({
   name: 'MatMul',
   inputTypes: hasBias ? [GpuDataType.default, GpuDataType.default, GpuDataType.default] :
-                        [GpuDataType.default, GpuDataType.default],
+    [GpuDataType.default, GpuDataType.default],
   cacheHint
 });
 
 export const createMatmulProgramInfoLoader =
-    (inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes, outputShape: readonly number[],
-     reshapedOutputShape?: readonly number[]): ProgramInfoLoader => {
-      const metadata = createMatmulProgramMetadata(inputs.length > 2, activationAttributes.activationCacheKey);
-      return {
-        ...metadata,
-        get: () => createMatmulProgramInfo(metadata, inputs, activationAttributes, outputShape, reshapedOutputShape)
-      };
+  (inputs: readonly TensorView[], activationAttributes: InternalActivationAttributes, outputShape: readonly number[],
+    reshapedOutputShape?: readonly number[], isChannelsLast = false): ProgramInfoLoader => {
+    const metadata = createMatmulProgramMetadata(inputs.length > 2, activationAttributes.activationCacheKey);
+    return {
+      ...metadata,
+      get: () => createMatmulProgramInfo(
+        metadata, inputs, activationAttributes, outputShape, reshapedOutputShape, isChannelsLast)
     };
+  };
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
   if (!inputs || inputs.length !== 2) {
