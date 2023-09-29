@@ -1,17 +1,16 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
-import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat, computeInPlaceSoftmax,} from './attentiion';
+import {applyAttention, AttentionAttrs, AttentionMaskType, AttentionParameters, AttentionQkvFormat} from './attention';
 import {
-  fillVector,
-  inputVariable,
-  outputVariable,
   ShaderHelper,
-  sumVector,
   tensorTypeToWsglStorageType
-} from './common'
+} from './common';
 import {createTransposeProgramInfo, TransposeAttributes, transposeProgramMetadata} from './transpose';
 
 const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttrs): AttentionParameters => {
@@ -74,47 +73,47 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   const headSize = Math.floor(hiddenSize / attributes.numHeads);
   if (pastKey && pastValue) {
     if (pastKey.dims.length !== 4) {
-      throw new Error('Input \'past_key\' is expected to have 4 dimensions');
+      throw new Error('Input "past_key" is expected to have 4 dimensions');
     }
     if (pastValue.dims.length !== 4) {
-      throw new Error('Input \'past_value\' is expected to have 4 dimensions')
+      throw new Error('Input "past_value" is expected to have 4 dimensions');
     }
     pastSequenceLength = pastKey.dims[2];
     maxSequenceLength = pastKey.dims[2];
   } else if (pastKey || pastValue) {
-    throw new Error('Input \'past_key\' and \'past_value\' shall be both present or both absent')
+    throw new Error('Input "past_key" and "past_value" shall be both present or both absent');
   }
 
   let qkvFormat: AttentionQkvFormat;
   if (key) {
     if (query.dims.length !== 3) {
-      throw new Error('Input \'query\' is expected to have 3 dimensions when key is given');
+      throw new Error('Input "query" is expected to have 3 dimensions when key is given');
     }
     if (key.dims.length < 3 || key.dims.length > 5) {
-      throw new Error('Input \'key\' is expected to have 3, 4, or 5 dimensions');
+      throw new Error('Input "key" is expected to have 3, 4, or 5 dimensions');
     }
     if (query.dims[0] !== key.dims[0]) {
-      throw new Error('Input \'query\' and \'key\' shall have same dim 0 (batch size)');
+      throw new Error('Input "query" and "key" shall have same dim 0 (batch size)');
     }
 
     if (key.dims.length === 3) {
       if (key.dims[2] !== query.dims[2]) {
-        throw new Error('Input \'query\' and \'key\' shall have same dim 2 (hidden_size)');
+        throw new Error('Input "query" and "key" shall have same dim 2 (hidden_size)');
       }
       qkvFormat = AttentionQkvFormat.qkvBSNH;
       kvSequenceLength = key.dims[1];
     } else if (key.dims.length === 5) {
       if (key.dims[2] !== attributes.numHeads || key.dims[3] !== 2 || key.dims[4] !== headSize) {
-        throw new Error('Expect \'key\' shape (batch_size, kv_sequence_length, num_heads, 2, head_size) for packed kv');
+        throw new Error('Expect "key" shape (batch_size, kv_sequence_length, num_heads, 2, head_size) for packed kv');
       }
       if (value) {
-        throw new Error('Expect \'value\' be none when \'key\' has packed kv format.');
+        throw new Error('Expect "value" be none when "key" has packed kv format.');
       }
       qkvFormat = AttentionQkvFormat.qKvBSNHxBSN2H;
       kvSequenceLength = key.dims[1];
     } else {  // key_dims.size() == 4 (cross-attention with past_key)
       if (key.dims[1] !== attributes.numHeads || key.dims[3] !== headSize) {
-        throw new Error('Expect \'key\' shape (batch_size, num_heads, kv_sequence_length, head_size) for past_key');
+        throw new Error('Expect "key" shape (batch_size, num_heads, kv_sequence_length, head_size) for past_key');
       }
 
       qkvFormat = AttentionQkvFormat.unknown;
@@ -122,10 +121,10 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
     }
   } else {  // packed QKV
     if (query.dims.length !== 3 && query.dims.length !== 5) {
-      throw new Error('Input \'query\' is expected to have 3 or 5 dimensions when key is empty');
+      throw new Error('Input "query" is expected to have 3 or 5 dimensions when key is empty');
     }
     if (query.dims.length === 5 && (query.dims[2] !== attributes.numHeads || query.dims[3] !== 3)) {
-      throw new Error('Expect \'query\' shape (batch_size, kv_sequence_length, num_heads, 3, head_size) for packed kv');
+      throw new Error('Expect "query" shape (batch_size, kv_sequence_length, num_heads, 3, head_size) for packed kv');
     }
 
     qkvFormat = AttentionQkvFormat.qkvBSN3H;
@@ -133,7 +132,7 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
 
   if (bias) {
     if (bias.dims.length !== 1) {
-      throw new Error('Input \'bias\' is expected to have 1 dimension');
+      throw new Error('Input "bias" is expected to have 1 dimension');
     }
 
     if (value) {
@@ -145,19 +144,19 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
 
   let maskType: AttentionMaskType = AttentionMaskType.none;
   if (keyPaddingMask) {
-    maskType = AttentionMaskType.MASK_UNKNOWN;
+    maskType = AttentionMaskType.maskUnknown;
     const maskDims = keyPaddingMask.dims;
     if (maskDims.length === 1) {
       if (maskDims[0] === batchSize) {
         maskType = AttentionMaskType.mask1dKeySeqLen;
       } else if (maskDims[0] === 3 * batchSize + 2) {
-        maskType = AttentionMaskType.mask1DKeySeqLenStart
+        maskType = AttentionMaskType.mask1DKeySeqLenStart;
       }
     } else if (maskDims.length === 2 && maskDims[0] === batchSize && maskDims[1] === kvSequenceLength) {
-      maskType = AttentionMaskType.MASK_2D_KEY_PADDING;
+      maskType = AttentionMaskType.mask2dKeyPadding;
     }
-    if (maskType === AttentionMaskType.MASK_UNKNOWN) {
-      throw new Error('Input \'key_padding_mask\' shape shall be (batch_size) or (batch_size, kv_sequence_length)');
+    if (maskType === AttentionMaskType.maskUnknown) {
+      throw new Error('Input "key_padding_mask" shape shall be (batch_size) or (batch_size, kv_sequence_length)');
     }
     throw new Error('Mask not supported');
   }
@@ -166,38 +165,35 @@ const validateInputs = (inputs: readonly TensorView[], attributes: AttentionAttr
   let vHiddenSize = hiddenSize;
   if (value) {
     if (value.dims.length !== 3 && value.dims.length !== 4) {
-      throw new Error('Input \'value\' is expected to have 3 or 4 dimensions')
+      throw new Error('Input "value" is expected to have 3 or 4 dimensions');
     }
 
     if (query.dims[0] !== value.dims[0]) {
-      throw new Error('Input \'query\' and \'value\' shall have same dim 0 (batch_size)')
+      throw new Error('Input "query" and "value" shall have same dim 0 (batch_size)');
     }
 
     if (value.dims.length === 3) {
       if (kvSequenceLength !== value.dims[1]) {
-        throw new Error('Input \'key\' and \'value\' shall have the same dim 1 (kv_sequence_length)')
+        throw new Error('Input "key" and "value" shall have the same dim 1 (kv_sequence_length)');
       }
       vHiddenSize = value.dims[2];
     } else {
       if (kvSequenceLength !== value.dims[2]) {
-        throw new Error('Input \'past_key\' and \'past_value\' shall have the same dim 2 (kv_sequence_length)')
+        throw new Error('Input "past_key" and "past_value" shall have the same dim 2 (kv_sequence_length)');
       }
       vHiddenSize = value.dims[1] * value.dims[3];
       passPastInKv = true;
     }
   }
 
-  let totalSequenceLength = pastSequenceLength + kvSequenceLength;
-  let broadcastResPosBias = false;
+  const totalSequenceLength = pastSequenceLength + kvSequenceLength;
+  const broadcastResPosBias = false;
   // if (extraAddQk) {
   //   if (extraAddQk.dims[0] === 1) {
   //     broadcastResPosBias = true;
   //   }
   // }
 
-  // if (bias) {
-  //   throw new Error('bias is not supported');
-  // }
   if (keyPaddingMask) {
     throw new Error('Key padding mask is not supported');
   }
@@ -240,7 +236,6 @@ export const parseMultiHeadAttentionAttributes = (attributes: AttentionAttrs): A
     createAttributeWithCacheKey({...attributes});
 
 const weightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3]});
-const packedWeightTransposeAttribute: TransposeAttributes = createAttributeWithCacheKey({perm: [0, 2, 1, 3, 4]});
 
 const addBiasTranspose =
     (context: ComputeContext, qkv: TensorView, bias: TensorView, batchSize: number, sequenceLength: number,
@@ -315,206 +310,15 @@ const maybeTransposeToBNSHAndAddBias =
       }
     };
 
-// const getMaxComponents = (size: number) => {
-//     if (size % 4 === 0) {
-//         return 4;
-//     } else if (size % 3 === 0) {
-//         return 3;
-//     } else if (size % 2 === 0) {
-//         return 2;
-//     }
-//
-//     return 1;
-// };
-
-const computeAttentionProbsBSN3H =
-    (context: ComputeContext, q: TensorView, key: TensorView, bias: TensorView|undefined,
-     parameters: AttentionParameters, attributes: AttentionAttrs) => {
-      const probsShape = [
-        parameters.batchSize, parameters.sequenceLength, parameters.numHeads,
-        parameters.kvSequenceLength + parameters.pastSequenceLength
-      ];
-
-      const components = undefined;  // getMaxComponents(parameters.headSize);
-      const qInput = inputVariable('q', q.dataType, q.dims, components);
-      const output = outputVariable('output', q.dataType, probsShape);
-
-      const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
-
-      const unitsOfWork = ShapeUtil.size(probsShape);
-
-      const M = parameters.sequenceLength;
-      const N = parameters.totalSequenceLength;
-      const K = parameters.headSize;
-
-      // since we are multiplying Q with transposed K and headSize = vHeadSize,
-      // we are multiplying Q head rows with K head rows for each head
-      const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const M: u32 = ${M}u;
-  const N: u32 = ${N}u;
-  const K: u32 = ${K / (components || 1)}u;
-  const numHeads: u32 = ${parameters.numHeads};
-  const batchSize: u32 = ${parameters.batchSize};
-  const alpha = f32(${alpha});
-  const beta = 1.0;
-
-  ${shaderHelper.declareVariables(qInput, output)}
-
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(unitsOfWork)}
-    // batch and head index
-    let batchIdx = global_idx / (M * N * numHeads);
-    let headIdx = (global_idx / (M * N)) % numHeads;
-    let qSequenceIdx = (global_idx / N) % ${parameters.sequenceLength};
-    let kSequenceIdx = global_idx % (M * N) % ${parameters.totalSequenceLength};
-
-    var headOffset = headIdx * ${parameters.headSize} * 3;
-
-    var qOffset = qSequenceIdx * ${parameters.headSize} * numHeads * 3 + headOffset;
-    var batchOffset = batchIdx * ${parameters.headSize} * numHeads * 3 * M;
-    qOffset += batchOffset; // batch offset
-    let kOffset = ${parameters.headSize}u + batchOffset + headOffset + kSequenceIdx * 
-        ${parameters.headSize} * numHeads * 3;
-    var value: ${qInput.type.storage} = ${fillVector(qInput.type.value, components)};
-    for (var k: u32 = 0u; k<${K}u; k++) {
-      value += q[k + qOffset] * q[k + kOffset];
-    }
-
-    let sum = ${sumVector('value', components!)} * alpha;
-    // value += beta * output[global_id.x]; // no mask
-    output[global_idx] = sum;
-  }`;
-
-      const inputTypes = [1].map(_ => GpuDataType.default);
-
-      const probs = context.compute(
-          {
-            name: 'computeAttentionProbsBSN3H',
-            cacheHint: JSON.stringify(parameters),
-            inputTypes,
-            outputs: [{dims: probsShape, dataType: q.dataType, gpuDataType: GpuDataType.default}],
-            getShaderSource,
-            dispatchGroup: () => ({x: Math.ceil(unitsOfWork / 64 /* workgroup size */)})
-          },
-          {inputs: [q], outputs: [-1]})[0];
-
-      computeInPlaceSoftmax(
-          context, probs, parameters.batchSize * parameters.numHeads * parameters.sequenceLength,
-          parameters.totalSequenceLength);
-
-      return probs;
-    };
-
-const computeVxAttentionScoreBSN3H = (probs: TensorView, qkv: TensorView, params: AttentionParameters) => {
-  const attentionScoreMatMulProgramData = {
-    name: 'computeVxAttentionScore',
-    inputTypes: [GpuDataType.default, GpuDataType.default],
-    cacheHint: JSON.stringify(params),
-  };
-
-  const outputShape = [params.batchSize, params.sequenceLength, params.numHeads, params.vHeadSize];
-  const outputSize = ShapeUtil.size(outputShape);
-
-  const probsHelper = inputVariable('probs', probs.dataType, probs.dims);
-  const qkvHelper = inputVariable('qkv', qkv.dataType, qkv.dims);
-  const output = outputVariable('output', probs.dataType, outputShape);
-
-  const dataType = 'f32';
-  const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const M: u32 = ${params.sequenceLength}u;
-  const N: u32 = ${params.vHeadSize}u;
-  const K: u32 = ${params.totalSequenceLength}u;
-  const numHeads: u32 = ${params.numHeads}u;
-  const batchSize: u32 = ${params.batchSize};
-
-  ${shaderHelper.declareVariables(probsHelper, qkvHelper, output)}
-
-  ${shaderHelper.mainStart()}
-    ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-    let batchIdx = global_idx / (M * N * numHeads);
-    let headIdx = (global_idx / (M * N)) % numHeads;
-    let probsSequenceIdx = (global_idx / N) % ${params.sequenceLength};
-
-    let offsetA = probsSequenceIdx * ${params.headSize} * numHeads + batchIdx * ${params.headSize} * numHeads * M;
-    
-    var headOffset = headIdx * ${params.vHeadSize} * 3;
-    var batchOffset = batchIdx * ${params.vHeadSize} * numHeads * 3 * M;
-    
-
-    var value = ${dataType}(0);
-    for (var k: u32 = 0u; k<K; k++) {
-      var vOffset = ${params.headSize * 2}u + batchOffset + headOffset + k * 
-          ${params.headSize} * numHeads * 3;
-      value += probs[offsetA + k] * qkv[vOffset];
-    }
-    output[global_idx] = f32(offsetA);
-  }`;
-  return {
-    ...attentionScoreMatMulProgramData,
-    outputs: [{dims: outputShape, dataType: qkv.dataType, gpuDataType: GpuDataType.default}],
-    getShaderSource,
-    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
-  };
-};
-
-export const applyPackedAttention =
-    (context: ComputeContext, q: TensorView, k: TensorView, v: TensorView, maskIndex: TensorView|undefined,
-     past: TensorView|undefined, pastKey: TensorView|undefined, pastValue: TensorView|undefined,
-     relativePositionBias: TensorView|undefined, parameters: AttentionParameters, attributes: AttentionAttrs) => {
-      const probs = computeAttentionProbsBSN3H(context, q, k, relativePositionBias, parameters, attributes);
-
-      const attentionScoreMatMulProgramData = {
-        name: 'PackedAttentionScore',
-        inputTypes: [GpuDataType.default, GpuDataType.default],
-        cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
-      };
-
-      const attentionResult = context.compute(
-          {
-            ...attentionScoreMatMulProgramData,
-            cacheHint: JSON.stringify(parameters),
-            get: () => computeVxAttentionScoreBSN3H(probs, q, parameters)
-          },
-          {inputs: [probs, v || q], outputs: [-1]})[0];
-
-      context.compute(
-          {
-            ...transposeProgramMetadata,
-            cacheHint: JSON.stringify(parameters) + JSON.stringify(attributes),
-            get: () => createTransposeProgramInfo(
-                attentionResult, weightTransposeAttribute.perm,
-                [parameters.batchSize, parameters.sequenceLength, parameters.vHiddenSize])
-          },
-          {inputs: [attentionResult], outputs: [0]});
-    };
-
 export const multiHeadAttention = (context: ComputeContext, attributes: AttentionAttrs): void => {
   const params = validateInputs(context.inputs, attributes);
 
   if (context.inputs[0].dims.length === 5) {
-    // transpose QKV from BSN3H to BNS3H
-    return applyPackedAttention(
-        context, context.inputs[0], context.inputs[1], context.inputs[2], context.inputs[4], undefined,
-        context.inputs[6], context.inputs[7], context.inputs[5], params, attributes);
+    throw new Error('Packed QKV is not implemented');
   }
 
   if (context.inputs[1]?.dims.length === 5) {
-    // transpose Q from BSD (BSNH) to BNSH
-    const Q = maybeTransposeToBNSHAndAddBias(
-        context, params.batchSize, params.numHeads, params.sequenceLength, params.headSize, context.inputs[0],
-        context.inputs[3], 0);
-
-    // transpose KV from BLN2H to BNS2H
-    const K = context.compute(
-        {
-          ...transposeProgramMetadata,
-          cacheHint: weightTransposeAttribute.cacheKey,
-          get: () => createTransposeProgramInfo(context.inputs[1], packedWeightTransposeAttribute.perm)
-        },
-        {inputs: [context.inputs[0]], outputs: [-1]})[0];
-    return applyAttention(
-        context, Q, K, context.inputs[2], context.inputs[4], undefined, context.inputs[6], context.inputs[7],
-        context.inputs[5], params, attributes);
+    throw new Error('Packed KV is not implemented');
   }
 
   // applyAttention expects BNSH inputs

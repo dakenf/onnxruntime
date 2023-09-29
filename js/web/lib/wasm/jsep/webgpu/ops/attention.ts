@@ -6,6 +6,7 @@ import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
 
 import {
+  castToF32,
   fillVector,
   getMaxComponents,
   inputVariable,
@@ -33,13 +34,12 @@ export enum AttentionMaskType {
   mask1DKeySeqLenStart,  // [3 * batch_size + 2] with [key_len[0], ..., key_len[batch_size - 1], query_start[0],
                               // ..., query_start[batch_size - 1], query_end[batch_size - 1], key_start[0], ...,
                               // key_start[batch_size - 1], key_end[batch_size - 1]]
-  MASK_2D_DUMMY,              // dummy mask with shape [1, 1] or [batch_size, 1]. It has same effect as no mask.
-  MASK_2D_KEY_PADDING,        // [batch_size, total_sequence_length]
-  MASK_3D_ATTENTION,          // [batch_size, sequence_length, total_sequence_length]
-  MASK_4D_MEGATRON,  // Megatron causal mask with shape [batch_size, 1, max_sequence_length, max_sequence_length]
-  MASK_UNKNOWN
+  mask2dDummy,              // dummy mask with shape [1, 1] or [batch_size, 1]. It has same effect as no mask.
+  mask2dKeyPadding,        // [batch_size, total_sequence_length]
+  mask3dAttention,          // [batch_size, sequence_length, total_sequence_length]
+  mask4dMegatron,  // Megatron causal mask with shape [batch_size, 1, max_sequence_length, max_sequence_length]
+  maskUnknown
 }
-;
 
 export interface AttentionParameters {
   batchSize: number;
@@ -168,7 +168,7 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
   const totalSequenceLength = kvSequenceLength + pastSequenceLength;
   const maxSequenceLength = -1;
 
-  let maskType = AttentionMaskType.none;
+  const maskType = AttentionMaskType.none;
   if (maskIndex) {
     // maskType = AttentionMaskType.MASK_UNKNOWN;
     // TODO: handle mask
@@ -209,8 +209,8 @@ const validateAttentionInputs = (inputs: readonly TensorView[], attributes: Atte
 export const parseAttentionAttributes = (attributes: AttentionAttrs): AttentionAttrs =>
   createAttributeWithCacheKey({...attributes});
 
-export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, N: number, D: number) => {
-  const components = getMaxComponents(D);
+export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView, n: number, d: number) => {
+  const components = getMaxComponents(d);
   const inputHelper = outputVariable('x', input.dataType, input.dims, components);
 
   let threadMaxValue = 'threadMaxVector';
@@ -221,18 +221,17 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
   }
   const dataType = tensorTypeToWsglStorageType(input.dataType);
   let WG = 64;
-  const dComp = D / components;
+  const dComp = d / components;
   if (dComp < WG) {
     WG = 1;
   } else if (dComp / 8 < 64) {
     WG = Math.ceil(dComp / 8);
   }
-  const elementsPerWG = Math.ceil(D / components / WG);
-  const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
+  const elementsPerWG = Math.ceil(d / components / WG);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
-  const dInv: ${dataType} = 1 / ${D};
-  const dComp = ${D / components};
+  const dInv: ${dataType} = 1 / ${d};
+  const dComp = ${d / components};
   var<workgroup> wgMax: array<f32, ${WG}>;
   var<workgroup> wgSum: array<f32, ${WG}>;
 
@@ -245,7 +244,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
 
     var threadMaxVector = ${fillVector('f32', components, '-3.402823e+38f')};
     for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-      threadMaxVector = max(${castToF32}(x[offset + i]), threadMaxVector);
+      threadMaxVector = max(${castToF32(dataType, components, 'x[offset + i]')}, threadMaxVector);
     }
     wgMax[local_index] = ${threadMaxValue};
     workgroupBarrier();
@@ -257,7 +256,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
 
     var sumVector = ${fillVector('f32', components, '0')};
     for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-      sumVector += exp(${castToF32}(x[offset + i]) - maxValue);
+      sumVector += exp(${castToF32(dataType, components, 'x[offset + i]')} - maxValue);
     }
     wgSum[local_index] = ${sumVector('sumVector', components)};
     workgroupBarrier();
@@ -273,7 +272,8 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       }
     } else {
       for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-        x[offset + i] = ${inputHelper.type.storage}(exp(${castToF32}(x[offset + i]) - maxValue) / sum);
+        let f32input = ${castToF32(dataType, components, 'x[offset + i]')};
+        x[offset + i] = ${inputHelper.type.value}(exp(f32input - maxValue) / sum);
       }
     }
   }`;
@@ -285,7 +285,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       inputTypes: [GpuDataType.default],
       outputs: [],
       getShaderSource,
-      dispatchGroup: () => ({x: N})
+      dispatchGroup: () => ({x: n})
     },
     {inputs: [input], outputs: []});
 };
@@ -314,7 +314,6 @@ const computeAttentionProbs =
     const K = vectorizedHeadSize;
 
     const TILE_SIZE = 12;
-    const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
 
     const dispatch = {
       x: Math.ceil(parameters.totalSequenceLength / TILE_SIZE),
@@ -327,7 +326,7 @@ const computeAttentionProbs =
   const M: u32 = ${M}u;
   const N: u32 = ${N}u;
   const K: u32 = ${K}u;
-  const alpha: f32 = ${alpha};
+  const alpha: ${dataType} = ${alpha};
   const beta: ${dataType} = 1.0;
   const TILE_SIZE = ${TILE_SIZE}u;
 
@@ -352,7 +351,7 @@ const computeAttentionProbs =
     let qOffset = ${parameters.sequenceLength * vectorizedHeadSize} * headIdx + m * K;
     let kOffset = ${parameters.kvSequenceLength * vectorizedHeadSize} * headIdx + n * K;
 
-    var value = ${fillVector('f32', components)};
+    var value = ${fillVector(dataType, components)};
     for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
       if (m + local_id.y < M && w + local_id.x < K) {
         tileQ[TILE_SIZE * local_id.y + local_id.x] = q[qOffset + local_id.y * K + w + local_id.x];
@@ -363,7 +362,7 @@ const computeAttentionProbs =
       workgroupBarrier();
 
       for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
-        value += ${castToF32}(tileQ[TILE_SIZE * local_id.y + k]) * ${castToF32}(tileK[TILE_SIZE * local_id.x + k]);
+        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * local_id.x + k];
       }
 
       workgroupBarrier();
@@ -372,7 +371,7 @@ const computeAttentionProbs =
     let headOffset = headIdx * M * N;
     if (lm < M && ln < N) {
       let outputIdx = headOffset + lm * N + ln;
-      output[outputIdx] = ${dataType}(${sumVector('value', components)} * alpha);
+      output[outputIdx] = ${sumVector('value', components)} * alpha;
     }
   }`;
 
@@ -489,17 +488,16 @@ export const applyAttention =
 
     ${shaderHelper.mainStart()}
       ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
-let h = global_idx % ${parameters.vHeadSize};
-  let s = (global_idx / ${parameters.vHeadSize}) % ${parameters.sequenceLength};
-  let n = (global_idx / (${parameters.vHeadSize} * ${parameters.sequenceLength})) % ${parameters.numHeads};
-  let b = global_idx / (${parameters.vHeadSize} * ${parameters.sequenceLength} * ${parameters.numHeads});
+        let h = global_idx % ${parameters.vHeadSize};
+        let s = (global_idx / ${parameters.vHeadSize}) % ${parameters.sequenceLength};
+        let n = (global_idx / (${parameters.vHeadSize} * ${parameters.sequenceLength})) % ${parameters.numHeads};
+        let b = global_idx / (${parameters.vHeadSize} * ${parameters.sequenceLength} * ${parameters.numHeads});
 
-  // Calculate the offsets for the input and output tensors
-  var inputOffset = b * ${parameters.numHeads} * ${parameters.sequenceLength} * ${parameters.vHeadSize} + n * ${parameters.sequenceLength} * ${parameters.vHeadSize} + s * ${parameters.vHeadSize} + h;
-  var outputOffset = b * ${parameters.sequenceLength} * ${parameters.vHiddenSize} + s * ${parameters.vHiddenSize} + h + n * ${parameters.vHeadSize};
-
-  // Copy the value from the input tensor to the output tensor
-  output[outputOffset] = input[inputOffset];
+        let inputOffset = b * ${parameters.numHeads} * ${parameters.sequenceLength} * ${parameters.vHeadSize} 
+          + n * ${parameters.sequenceLength} * ${parameters.vHeadSize} + s * ${parameters.vHeadSize} + h;
+        let outputOffset = b * ${parameters.sequenceLength} * ${parameters.vHiddenSize} 
+          + s * ${parameters.vHiddenSize} + h + n * ${parameters.vHeadSize};
+        output[outputOffset] = input[inputOffset];
     }`;
 
     context.compute(
@@ -521,9 +519,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
     parameters.sequenceLength,
     parameters.headSize,
   ];
-  // TODO: handle mask
 
-  // const alpha = attributes.scale === 0 ? 1.0 / Math.sqrt(parameters.headSize) : attributes.scale;
   const dataType = tensorTypeToWsglStorageType(context.inputs[0].dataType);
 
   const M = parameters.sequenceLength;

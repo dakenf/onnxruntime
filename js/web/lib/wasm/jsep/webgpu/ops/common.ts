@@ -249,7 +249,18 @@ export const fillVector = (dataType = 'f32', components?: number, value = '0') =
     return `${dataType}(${value})`;
   }
 
-  return `vec${components}<${dataType}>(${new Array(components).fill(value).join(',')})`;
+  return `vec${components}<${dataType}>(${value})`;
+};
+
+export const castToF32 = (dataType: string, components: number, value: string) => {
+  if (dataType === 'f32') {
+    return value;
+  }
+  if (components === 1) {
+    return `f32(${value})`;
+  }
+
+  return `vec${components}f(${value})`;
 };
 
 export const sumVector = (name: string, components: number) => {

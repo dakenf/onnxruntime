@@ -203,9 +203,10 @@ function buildTestRunnerConfig({
       },
       extensions: ['.ts', '.js'],
       fallback: {
-        './binding/ort-wasm.js': false,
-        './binding/ort-wasm-threaded.js': false,
-        './binding/ort-wasm-threaded.worker.js': false
+        // './binding/ort-wasm.js': false,
+        // './binding/ort-wasm-threaded.js': false,
+        // './binding/ort-wasm-threaded.worker.js': false,
+        // './binding/ort-wasm-simd-threaded.worker.js': false
       }
     },
     plugins: [

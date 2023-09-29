@@ -7,11 +7,14 @@ import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-w
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
 
 import {
+  castToF32,
   fillVector,
   getMaxComponents,
   inputVariable,
   outputVariable,
-  ShaderHelper, sumVector,
+  ShaderHelper,
+  sumVector,
+  tensorTypeToWsglStorageType,
 } from './common';
 import { DataType } from '../../../wasm-common';
 
@@ -55,9 +58,9 @@ const createLayerNormProgramInfo =
             }
           }
 
-          // TODO: for some reason it does not work with fp16 yet
+          // TODO: for some reason it does not work correctly with fp16
           const components = inputs[0].dataType !== DataType.float16 ? getMaxComponents(normSize) : 1;
-          const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
+          const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
           const variables = [
             inputVariable('x', inputs[0].dataType, inputs[0].dims, components),
             inputVariable('scale', scale.dataType, scale.dims, components),
@@ -89,7 +92,7 @@ const createLayerNormProgramInfo =
     var meanSquareVector = ${fillVector('f32', components)};
 
     for (var h: u32 = 0u; h < normSize; h++) {
-      let value = ${castToF32}(x[h + offset]);
+      let value = ${castToF32(dataType, components, 'x[h + offset]')};
       meanVector += value;
       meanSquareVector += value * value;
     }
@@ -98,9 +101,10 @@ const createLayerNormProgramInfo =
       / f32(normSize) - mean * mean + epsilon);
 
     for (var j: u32 = 0; j < normSize; j++) {
-      output[j + offset] = ${variables[0].type.value}(
-        (${castToF32}(x[j + offset]) - mean) / meanSquare * ${castToF32}(scale[j]) 
-        ${bias ? `+${castToF32}(bias[j])` : ''}
+      let f32input = ${castToF32(dataType, components, 'x[j + offset]')};
+      let f32scale = ${castToF32(dataType, components, 'scale[j]')};
+      output[j + offset] = ${variables[0].type.value}((f32input - mean) / meanSquare * f32scale
+        ${bias ? `+ ${castToF32(dataType, components, 'bias[j]')}` : ''}
       );
     }
 

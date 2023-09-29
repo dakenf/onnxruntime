@@ -7,12 +7,13 @@ import {AttributeWithCacheKey, createAttributeWithCacheKey} from '../attribute-w
 import {ComputeContext, GpuDataType, ProgramInfo, ProgramInfoLoader, ProgramMetadata} from '../types';
 
 import {
+  castToF32,
   fillVector,
   getMaxComponents,
   inputVariable,
   outputVariable,
   ShaderHelper, sumVector, tensorTypeToWsglStorageType,
-} from './common';
+} from './common'
 import { DataType } from '../../../wasm-common'
 
 export interface SkipLayerNormAttributes extends AttributeWithCacheKey {
@@ -114,7 +115,6 @@ const createSkipLayerNormProgramInfo =
         variables.push(outputVariable('inputSkipBiasSum', inputs[0].dataType, outputShape, components));
       }
       const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
-      const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
       const getShaderSource = (shaderHelper: ShaderHelper) => `
       const hiddenSize: u32 = ${hiddenSize};
       const hiddenSizeVectorized: u32 = ${hiddenSize / components};
@@ -134,7 +134,7 @@ const createSkipLayerNormProgramInfo =
           let value = inputValue + skipValue + biasValue;
           ${hasInputSkipBiasSumOutput ? 'inputSkipBiasSum[offset + i] = value;' : ''}
           output[offset + i] = value;
-          let f32Value = ${castToF32}(value);
+          let f32Value = ${castToF32(dataType, components, 'value')};
           sum += f32Value;
           squareSum += f32Value * f32Value;
         }

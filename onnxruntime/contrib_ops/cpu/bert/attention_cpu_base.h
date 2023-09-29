@@ -283,6 +283,12 @@ class AttentionCPUBase : public AttentionBase {
         }
       }
     });
+
+//    std::cout << "Before transpose.";
+//    for (size_t i = 0; i < batch_size * num_heads_ * sequence_length * v_head_size; ++i) {
+//      std::cout << tmp_buffer[i] << " ";
+//    }
+//    std::cout << std::endl;
   }
 };
 

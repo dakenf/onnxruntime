@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import {argMax, argMin, parseArgMinMaxAttributes} from './ops/argminmax';
-import {attention, parseAttentionAttributes} from './ops/attentiion';
+import {attention, parseAttentionAttributes} from './ops/attention';
 import {biasAdd} from './ops/bias-add';
 import {biasSplitGelu} from './ops/bias-split-gelu';
 import * as binaryOps from './ops/binary-op';
