@@ -327,22 +327,22 @@ Status Attention<T>::Compute(OpKernelContext* context) const {
     });
   }
 
-  std::cout << "Prepare completed.";
-  std::cout << "First 10 values at Q: ";
-  for (size_t i = 0; i < qkv_head_size[0] * sequence_length * batch_size * num_heads_; ++i) {
-    std::cout << Q[i] << " ";
-  }
-  std::cout << std::endl;
-  std::cout << "First 10 values at K: ";
-  for (size_t i = 0; i < qkv_head_size[1] * sequence_length * batch_size * num_heads_; ++i) {
-    std::cout << K[i] << " ";
-  }
-  std::cout << std::endl;
-  std::cout << "First 10 values at V: ";
-  for (size_t i = 0; i < qkv_head_size[2] * sequence_length * batch_size * num_heads_; ++i) {
-    std::cout << V[i] << " ";
-  }
-  std::cout << std::endl;
+//  std::cout << "Prepare completed.";
+//  std::cout << "First 10 values at Q: ";
+//  for (size_t i = 0; i < qkv_head_size[0] * sequence_length * batch_size * num_heads_; ++i) {
+//    std::cout << Q[i] << " ";
+//  }
+//  std::cout << std::endl;
+//  std::cout << "First 10 values at K: ";
+//  for (size_t i = 0; i < qkv_head_size[1] * sequence_length * batch_size * num_heads_; ++i) {
+//    std::cout << K[i] << " ";
+//  }
+//  std::cout << std::endl;
+//  std::cout << "First 10 values at V: ";
+//  for (size_t i = 0; i < qkv_head_size[2] * sequence_length * batch_size * num_heads_; ++i) {
+//    std::cout << V[i] << " ";
+//  }
+//  std::cout << std::endl;
 
   // Compute the attention score and apply the score to V
   return ApplyAttention(Q, K, V, mask_index, past, nullptr /* past_key */, nullptr /* past_value */,

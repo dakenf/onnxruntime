@@ -149,10 +149,10 @@ const createSkipLayerNormProgramInfo =
       }`;
       const outputs = [{dims: outputShape, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default}];
       if (outputCount > 1) {
-        outputs.push({dims: meanInvStdDevDim, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default});
+        outputs.push({dims: meanInvStdDevDim, dataType: DataType.float, gpuDataType: GpuDataType.default});
       }
       if (outputCount > 2) {
-        outputs.push({dims: meanInvStdDevDim, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default});
+        outputs.push({dims: meanInvStdDevDim, dataType: DataType.float, gpuDataType: GpuDataType.default});
       }
       if (outputCount > 3) {
         outputs.push({dims: inputShape, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default});

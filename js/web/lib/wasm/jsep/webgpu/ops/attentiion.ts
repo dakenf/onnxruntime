@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
 import {ComputeContext, GpuDataType} from '../types';
@@ -229,14 +228,13 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     WG = Math.ceil(dComp / 8);
   }
   const elementsPerWG = Math.ceil(D / components / WG);
+  const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
 
-  // 6.2.4 in wgsl spec
-  const threadMaxMinValue = dataType === 'f32' ? '-3.402823e+38f' : '-65504.0h';
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const dInv: ${dataType} = 1 / ${D};
   const dComp = ${D / components};
-  var<workgroup> wgMax: array<${dataType}, ${WG}>;
-  var<workgroup> wgSum: array<${dataType}, ${WG}>;
+  var<workgroup> wgMax: array<f32, ${WG}>;
+  var<workgroup> wgSum: array<f32, ${WG}>;
 
   ${shaderHelper.declareVariables(inputHelper)}
   @compute @workgroup_size(${WG}, 1, 1)
@@ -245,26 +243,26 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
     let localOffset = local_index * ${elementsPerWG};
     let offset: u32 = workgroup_id.x * dComp + localOffset;
 
-    var threadMaxVector = ${fillVector(dataType, components, threadMaxMinValue)};
+    var threadMaxVector = ${fillVector('f32', components, '-3.402823e+38f')};
     for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-      threadMaxVector = max(x[offset + i], threadMaxVector);
+      threadMaxVector = max(${castToF32}(x[offset + i]), threadMaxVector);
     }
     wgMax[local_index] = ${threadMaxValue};
     workgroupBarrier();
 
-    var maxValue = ${threadMaxMinValue};
+    var maxValue = -3.402823e+38f;
     for (var i = 0u; i < ${WG}; i++) {
       maxValue = max(wgMax[i], maxValue);
     }
 
-    var sumVector = ${fillVector(dataType, components, '0')};
+    var sumVector = ${fillVector('f32', components, '0')};
     for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-      sumVector += exp(x[offset + i] - maxValue);
+      sumVector += exp(${castToF32}(x[offset + i]) - maxValue);
     }
     wgSum[local_index] = ${sumVector('sumVector', components)};
     workgroupBarrier();
 
-    var sum: ${dataType} = 0;
+    var sum: f32 = 0;
     for (var i = 0u; i < ${WG}; i++) {
       sum += wgSum[i];
     }
@@ -275,7 +273,7 @@ export const computeInPlaceSoftmax = (context: ComputeContext, input: TensorView
       }
     } else {
       for (var i: u32 = 0; i < ${elementsPerWG} && i + localOffset < dComp; i++) {
-        x[offset + i] = exp(x[offset + i] - maxValue) / sum;
+        x[offset + i] = ${inputHelper.type.storage}(exp(${castToF32}(x[offset + i]) - maxValue) / sum);
       }
     }
   }`;
@@ -315,7 +313,8 @@ const computeAttentionProbs =
     const N = parameters.totalSequenceLength;
     const K = vectorizedHeadSize;
 
-    const TILE_SIZE = 8;
+    const TILE_SIZE = 12;
+    const castToF32 = components === 1 ? 'f32' : `vec${components}f`;
 
     const dispatch = {
       x: Math.ceil(parameters.totalSequenceLength / TILE_SIZE),
@@ -328,7 +327,7 @@ const computeAttentionProbs =
   const M: u32 = ${M}u;
   const N: u32 = ${N}u;
   const K: u32 = ${K}u;
-  const alpha = ${dataType}(${alpha});
+  const alpha: f32 = ${alpha};
   const beta: ${dataType} = 1.0;
   const TILE_SIZE = ${TILE_SIZE}u;
 
@@ -353,7 +352,7 @@ const computeAttentionProbs =
     let qOffset = ${parameters.sequenceLength * vectorizedHeadSize} * headIdx + m * K;
     let kOffset = ${parameters.kvSequenceLength * vectorizedHeadSize} * headIdx + n * K;
 
-    var value = ${fillVector(dataType, components)};
+    var value = ${fillVector('f32', components)};
     for (var w: u32 = 0u; w < K; w += TILE_SIZE) {
       if (m + local_id.y < M && w + local_id.x < K) {
         tileQ[TILE_SIZE * local_id.y + local_id.x] = q[qOffset + local_id.y * K + w + local_id.x];
@@ -364,7 +363,7 @@ const computeAttentionProbs =
       workgroupBarrier();
 
       for (var k: u32 = 0u; k<TILE_SIZE && w+k < K; k++) {
-        value += tileQ[TILE_SIZE * local_id.y + k] * tileK[TILE_SIZE * local_id.x + k];
+        value += ${castToF32}(tileQ[TILE_SIZE * local_id.y + k]) * ${castToF32}(tileK[TILE_SIZE * local_id.x + k]);
       }
 
       workgroupBarrier();
@@ -373,7 +372,7 @@ const computeAttentionProbs =
     let headOffset = headIdx * M * N;
     if (lm < M && ln < N) {
       let outputIdx = headOffset + lm * N + ln;
-      output[outputIdx] = ${sumVector('value', components)} * alpha;
+      output[outputIdx] = ${dataType}(${sumVector('value', components)} * alpha);
     }
   }`;
 
@@ -406,7 +405,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
 
   const dataType = tensorTypeToWsglStorageType(probs.dataType);
 
-  const TILE_SIZE = 8;
+  const TILE_SIZE = 12;
   const dispatch = {
     x: Math.ceil(params.vHeadSize / TILE_SIZE),
     y: Math.ceil(params.sequenceLength / TILE_SIZE),
@@ -465,7 +464,7 @@ const computeVxAttentionScore = (context: ComputeContext, probs: TensorView, v: 
       name: 'AttentionScore',
       inputTypes: [GpuDataType.default, GpuDataType.default],
       cacheHint: JSON.stringify(params),
-      outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+      outputs: [{dims: outputShape, dataType: probs.dataType, gpuDataType: GpuDataType.default}],
       getShaderSource,
       dispatchGroup: () => (dispatch)
     },
@@ -508,7 +507,7 @@ let h = global_idx % ${parameters.vHeadSize};
         name: 'AttentionTranspose',
         cacheHint: JSON.stringify(parameters),
         inputTypes: [GpuDataType.default],
-        outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+        outputs: [{dims: outputShape, dataType: q.dataType, gpuDataType: GpuDataType.default}],
         getShaderSource,
         dispatchGroup: () => ({ x: Math.ceil(outputSize / 64) }),
       },
@@ -531,7 +530,7 @@ const prepare = (context: ComputeContext, parameters: AttentionParameters, attri
   const K = parameters.inputHiddenSize;
   const N = parameters.headSize;
 
-  const TILE_SIZE = 8;
+  const TILE_SIZE = 12;
   const dispatch = {
     x: Math.ceil(parameters.headSize / TILE_SIZE),
     y: Math.ceil(parameters.sequenceLength / TILE_SIZE),

@@ -1,4 +1,3 @@
-import {DataType} from '../../../wasm-common';
 import {TensorView} from '../../tensor';
 import {ShapeUtil} from '../../util';
 import {createAttributeWithCacheKey} from '../attribute-with-cache-key';
@@ -274,7 +273,7 @@ const addBiasTranspose =
       return context.compute(
           {
             ...addBiasTransposeMetadata,
-            outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+            outputs: [{dims: outputShape, dataType: qkv.dataType, gpuDataType: GpuDataType.default}],
             getShaderSource,
             dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
           },
@@ -452,7 +451,7 @@ const computeVxAttentionScoreBSN3H = (probs: TensorView, qkv: TensorView, params
   }`;
   return {
     ...attentionScoreMatMulProgramData,
-    outputs: [{dims: outputShape, dataType: DataType.float, gpuDataType: GpuDataType.default}],
+    outputs: [{dims: outputShape, dataType: qkv.dataType, gpuDataType: GpuDataType.default}],
     getShaderSource,
     dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
   };
