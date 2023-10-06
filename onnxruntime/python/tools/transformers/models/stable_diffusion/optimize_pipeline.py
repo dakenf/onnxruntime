@@ -146,7 +146,7 @@ def optimize_sd_pipeline(
             logger.info("Convert %s to float16 ...", name)
             op_block_list = ["RandomNormalLike"]
             m.convert_float_to_float16(
-                keep_io_types=False,
+                keep_io_types=True,
                 op_block_list=op_block_list + force_fp32_operators[name],
             )
 
