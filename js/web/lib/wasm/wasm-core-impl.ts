@@ -79,7 +79,7 @@ export const createSessionAllocate = (model: Uint8Array, weights?: ArrayBuffer):
 
   let weightsFile: FSNode|undefined;
   if (weights) {
-    weightsFile = wasm.FS.create('/home/web_user/model.onnx.data');
+    weightsFile = wasm.FS.create('/home/web_user/model.onnx_data');
     weightsFile.contents = weights;
     weightsFile.usedBytes = weights.byteLength;
     wasm.FS.chdir('/home/web_user');
@@ -149,7 +149,7 @@ export const createSessionFinalize =
         }
         allocs.forEach(alloc => wasm._free(alloc));
         if (modelData[2]) {
-          wasm.FS.unlink('/home/web_user/model.onnx.data');
+          wasm.FS.unlink('/home/web_user/model.onnx_data');
         }
       }
     };
