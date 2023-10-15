@@ -26,7 +26,7 @@ class Pad : public JsKernel, public PadBase {
                                static_cast<int32_t>(mode_),
                                static_cast<double>(value_),
                                gsl::narrow_cast<int32_t>(pads.size()),
-                               reinterpret_cast<int32_t>((pads.size() > 0) ? pads.data() : nullptr) >> 2);
+                               reinterpret_cast<intptr_t>((pads.size() > 0) ? pads.data() : nullptr) >> 2);
   }
 };
 

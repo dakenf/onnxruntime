@@ -16,7 +16,7 @@ ONNX_OPERATOR_KERNEL_EX(
     kJsExecutionProvider,
     (*KernelDefBuilder::Create())
         .TypeConstraint("T", DataTypeImpl::GetTensorType<float>()),
-    Conv<true, true>);
+    Conv<true>);
 
 }  // namespace js
 }  // namespace contrib
