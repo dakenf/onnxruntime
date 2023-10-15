@@ -1,90 +1,86 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {readFile} from 'fs';
-import {env, InferenceSession, SessionHandler, Tensor} from 'onnxruntime-common';
-import {promisify} from 'util';
+import {readFile} from 'node:fs/promises';
+import {env, InferenceSession, InferenceSessionHandler, SessionHandler, Tensor} from 'onnxruntime-common';
 
-import {SerializableModeldata} from './proxy-messages';
-import {createSessionAllocate, createSessionFinalize, endProfiling, initializeRuntime, releaseSession, run} from './proxy-wrapper';
-import {streamResponseToBuffer} from './wasm-common';
+import {SerializableModeldata, TensorMetadata} from './proxy-messages';
+import {createSession, createSessionAllocate, createSessionFinalize, endProfiling, initializeRuntime, releaseSession, run} from './proxy-wrapper';
+import {isGpuBufferSupportedType} from './wasm-common';
 
 let runtimeInitialized: boolean;
+let runtimeInitializationPromise: Promise<void>|undefined;
 
-export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
+const encodeTensorMetadata = (tensor: Tensor, getName: () => string): TensorMetadata => {
+  switch (tensor.location) {
+    case 'cpu':
+      return [tensor.type, tensor.dims, tensor.data, 'cpu'];
+    case 'gpu-buffer':
+      return [tensor.type, tensor.dims, {gpuBuffer: tensor.gpuBuffer}, 'gpu-buffer'];
+    default:
+      throw new Error(`invalid data location: ${tensor.location} for ${getName()}`);
+  }
+};
+
+const decodeTensorMetadata = (tensor: TensorMetadata): Tensor => {
+  switch (tensor[3]) {
+    case 'cpu':
+      return new Tensor(tensor[0], tensor[2], tensor[1]);
+    case 'gpu-buffer': {
+      const dataType = tensor[0];
+      if (!isGpuBufferSupportedType(dataType)) {
+        throw new Error(`not supported data type: ${dataType} for deserializing GPU tensor`);
+      }
+      const {gpuBuffer, download, dispose} = tensor[2];
+      return Tensor.fromGpuBuffer(gpuBuffer, {dataType, dims: tensor[1], download, dispose});
+    }
+    default:
+      throw new Error(`invalid data location: ${tensor[3]}`);
+  }
+};
+
+export class OnnxruntimeWebAssemblySessionHandler implements InferenceSessionHandler {
   private sessionId: number;
 
   inputNames: string[];
   outputNames: string[];
 
-  async fetchModelAndWeights(modelPath: string, weightsPath?: string): Promise<[Uint8Array, ArrayBuffer?]> {
-    const modelResponse = await fetch(modelPath);
-    if (modelResponse.status !== 200) {
-      throw new Error(`failed to load model: ${modelPath}`);
+  async createSessionAllocate(path: string): Promise<SerializableModeldata> {
+    // fetch model from url and move to wasm heap. The arraybufffer that held the http
+    // response is freed once we return
+    const response = await fetch(path);
+    if (response.status !== 200) {
+      throw new Error(`failed to load model: ${path}`);
     }
-    const promises: [Promise<Uint8Array>, Promise<ArrayBuffer>?] = [
-      modelResponse.arrayBuffer().then(b => new Uint8Array(b))
-    ];
-
-    if (weightsPath) {
-      const weightsResponse = await fetch(weightsPath);
-      const weightsSize = parseInt(weightsResponse.headers.get('Content-Length')!, 10);
-      // we cannot create ArrayBuffer > 2gb but 64bit WASM Memory can have arbitrary size
-      const weightsMemory = new WebAssembly.Memory({
-        initial: Math.ceil(weightsSize / 65536),
-        maximum: Math.ceil(weightsSize / 65536),
-        // WASM Memory "index" parameter spec change landed but types are not yet updated
-        // https://github.com/WebAssembly/memory64/pull/39
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        index: 'i64',
-        shared: true,
-      });
-      promises.push(streamResponseToBuffer(weightsResponse, weightsMemory.buffer, 0).then(() => weightsMemory.buffer));
-    }
-
-    // fetch model and weights in parallel
-    return Promise.all(promises);
+    const arrayBuffer = await response.arrayBuffer();
+    return createSessionAllocate(new Uint8Array(arrayBuffer));
   }
 
-  async loadModel(
-      urisOrBuffers: string|[string, string]|Uint8Array|[Uint8Array, ArrayBuffer],
-      options?: InferenceSession.SessionOptions): Promise<void> {
+  async loadModel(pathOrBuffer: string|Uint8Array, options?: InferenceSession.SessionOptions): Promise<void> {
     if (!runtimeInitialized) {
-      await initializeRuntime(env);
+      if (!runtimeInitializationPromise) {
+        runtimeInitializationPromise = initializeRuntime(env);
+      }
+      await runtimeInitializationPromise;
+      runtimeInitializationPromise = undefined;
       runtimeInitialized = true;
     }
 
-    let modelBuffer: Uint8Array;
-    let weightsBuffer: ArrayBuffer|undefined;
-    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
-    if (Array.isArray(urisOrBuffers)) {
-      // handle [string, string]
-      if (typeof urisOrBuffers[0] === 'string') {
-        if (isNode) {
-          modelBuffer = await promisify(readFile)(urisOrBuffers[0]);
-          weightsBuffer = await promisify(readFile)(urisOrBuffers[1] as string);
-        } else {
-          [modelBuffer, weightsBuffer] = await this.fetchModelAndWeights(urisOrBuffers[0], urisOrBuffers[1] as string);
-        }
-      } else {  // [UInt8Array, ArrayBuffer]
-        [modelBuffer, weightsBuffer] = urisOrBuffers as [Uint8Array, ArrayBuffer];
+    if (typeof pathOrBuffer === 'string') {
+      if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        // node
+        const model = await readFile(pathOrBuffer);
+        [this.sessionId, this.inputNames, this.outputNames] = await createSession(model, options);
+      } else {
+        // browser
+        // fetch model and move to wasm heap.
+        const modelData: SerializableModeldata = await this.createSessionAllocate(pathOrBuffer);
+        // create the session
+        [this.sessionId, this.inputNames, this.outputNames] = await createSessionFinalize(modelData, options);
       }
     } else {
-      if (typeof urisOrBuffers === 'string') {
-        if (isNode) {
-          modelBuffer = await promisify(readFile)(urisOrBuffers);
-        } else {
-          [modelBuffer] = await this.fetchModelAndWeights(urisOrBuffers);
-        }
-      } else {
-        modelBuffer = urisOrBuffers;
-      }
+      [this.sessionId, this.inputNames, this.outputNames] = await createSession(pathOrBuffer, options);
     }
-
-    const modelData: SerializableModeldata = await createSessionAllocate(modelBuffer, weightsBuffer);
-    // create the session
-    [this.sessionId, this.inputNames, this.outputNames] = await createSessionFinalize(modelData, options);
   }
 
   async dispose(): Promise<void> {
@@ -106,26 +102,31 @@ export class OnnxruntimeWebAssemblySessionHandler implements SessionHandler {
       inputIndices.push(index);
     });
 
+    const outputArray: Array<Tensor|null> = [];
     const outputIndices: number[] = [];
     Object.entries(fetches).forEach(kvp => {
       const name = kvp[0];
-      // TODO: support pre-allocated output
+      const tensor = kvp[1];
       const index = this.outputNames.indexOf(name);
       if (index === -1) {
         throw new Error(`invalid output '${name}'`);
       }
+      outputArray.push(tensor);
       outputIndices.push(index);
     });
 
-    const outputs =
-        await run(this.sessionId, inputIndices, inputArray.map(t => [t.type, t.dims, t.data]), outputIndices, options);
+    const inputs =
+        inputArray.map((t, i) => encodeTensorMetadata(t, () => `input "${this.inputNames[inputIndices[i]]}"`));
+    const outputs = outputArray.map(
+        (t, i) => t ? encodeTensorMetadata(t, () => `output "${this.outputNames[outputIndices[i]]}"`) : null);
 
-    const result: SessionHandler.ReturnType = {};
-    for (let i = 0; i < outputs.length; i++) {
-      result[this.outputNames[outputIndices[i]]] =
-          new Tensor(outputs[i][0], outputs[i][2], outputs[i][1].map(i => Number(i)));
+    const results = await run(this.sessionId, inputIndices, inputs, outputIndices, outputs, options);
+
+    const resultMap: SessionHandler.ReturnType = {};
+    for (let i = 0; i < results.length; i++) {
+      resultMap[this.outputNames[outputIndices[i]]] = outputArray[i] ?? decodeTensorMetadata(results[i]);
     }
-    return result;
+    return resultMap;
   }
 
   startProfiling(): void {

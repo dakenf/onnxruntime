@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {TensorView} from '../../tensor';
+import {TensorView} from '../../tensor-view';
 import {ShapeUtil} from '../../util';
-import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
+import {ComputeContext, ProgramInfo} from '../types';
 
 import {inputVariable, outputVariable, ShaderHelper} from './common';
 
@@ -25,17 +25,18 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
   }
 };
 
-const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
+const createBiasAddProgramInfo = (inputs: readonly TensorView[]): ProgramInfo => {
   const outputShape = inputs[0].dims;
 
   const channels = inputs[0].dims[2];
   // since channel number can be only 320/640/1280, it's always divisable by 4
   const outputSize = ShapeUtil.size(outputShape) / 4;
 
-  const input = inputVariable('input', inputs[0].dataType, outputShape, 4);
-  const bias = inputVariable('bias', inputs[1].dataType, [channels], 4);
-  const residual = inputVariable('residual', inputs[1].dataType, outputShape, 4);
-  const output = outputVariable('output', inputs[0].dataType, outputShape, 4);
+  const dataType = inputs[0].dataType;
+  const input = inputVariable('input', dataType, outputShape, 4);
+  const bias = inputVariable('bias', dataType, [channels], 4);
+  const residual = inputVariable('residual', dataType, outputShape, 4);
+  const output = outputVariable('output', dataType, outputShape, 4);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const channels = ${channels}u / 4;
@@ -49,20 +50,16 @@ const createBiasAddProgramInfo = (metadata: ProgramMetadata, inputs: readonly Te
   }`;
 
   return {
-    ...metadata,
-    outputs: [{dims: outputShape, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default}],
+    name: 'BiasAdd',
+    getRunData: () => ({
+      outputs: [{dims: outputShape, dataType: inputs[0].dataType}],
+      dispatchGroup: {x: Math.ceil(outputSize / 64 /* workgroup size */)}
+    }),
     getShaderSource,
-    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
   };
 };
 
 export const biasAdd = (context: ComputeContext): void => {
   validateInputs(context.inputs);
-  const inputTypes = Array(context.inputs.length).fill(GpuDataType.default);
-  const metadata = {
-    name: 'BiasAdd',
-    inputTypes,
-  };
-
-  context.compute(createBiasAddProgramInfo(metadata, context.inputs));
+  context.compute(createBiasAddProgramInfo(context.inputs));
 };

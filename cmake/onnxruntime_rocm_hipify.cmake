@@ -10,6 +10,9 @@ set(contrib_ops_excluded_files
   "bert/attention_impl.cu"
   "bert/attention_softmax.h"
   "bert/attention_softmax.cu"
+  "bert/attention_prepare_qkv.cu"
+  "bert/decoder_attention_impl.h"
+  "bert/decoder_attention_impl.cu"
   "bert/decoder_masked_multihead_attention.h"
   "bert/decoder_masked_multihead_attention.cc"
   "bert/decoder_masked_self_attention.h"
@@ -106,7 +109,12 @@ if (NOT onnxruntime_ENABLE_ATEN)
   list(APPEND contrib_ops_excluded_files "aten_ops/aten_op.cc")
 endif()
 if (NOT onnxruntime_USE_NCCL)
+  # Those are string patterns to exclude. Do NOT use stars such as
+  # collective/*.cc or *.h.
   list(APPEND contrib_ops_excluded_files "collective/nccl_kernels.cc")
+  list(APPEND contrib_ops_excluded_files "collective/sharding.cc")
+  list(APPEND contrib_ops_excluded_files "collective/sharding_spec.cc")
+  list(APPEND contrib_ops_excluded_files "collective/distributed_matmul.cc")
 endif()
 
 set(provider_excluded_files

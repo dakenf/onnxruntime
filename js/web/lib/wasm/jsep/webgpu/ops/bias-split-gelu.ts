@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import {TensorView} from '../../tensor';
+import {TensorView} from '../../tensor-view';
 import {ShapeUtil} from '../../util';
-import {ComputeContext, GpuDataType, ProgramInfo, ProgramMetadata} from '../types';
+import {ComputeContext, ProgramInfo} from '../types';
 
-import { inputVariable, outputVariable, ShaderHelper, tensorTypeToWsglStorageType } from './common'
+import {inputVariable, outputVariable, ShaderHelper} from './common';
 import {erfImpl} from './unary-op';
 
 const validateInputs = (inputs: readonly TensorView[]): void => {
@@ -26,7 +26,7 @@ const validateInputs = (inputs: readonly TensorView[]): void => {
   }
 };
 
-const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: readonly TensorView[]): ProgramInfo => {
+const createBiasSplitGeluProgramInfo = (inputs: readonly TensorView[]): ProgramInfo => {
   const outputShape = inputs[0].dims.slice();
   outputShape[2] = outputShape[2] / 2;
 
@@ -35,7 +35,6 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
   const output = outputVariable('output', inputs[0].dataType, outputShape, 4);
 
   const outputSize = ShapeUtil.size(outputShape) / 4;
-  const dataType = tensorTypeToWsglStorageType(inputs[0].dataType);
 
   const getShaderSource = (shaderHelper: ShaderHelper) => `
   const M_SQRT2 = sqrt(2.0);
@@ -43,7 +42,7 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
 
   ${shaderHelper.declareVariables(input, bias, output)}
 
-  ${erfImpl(`vec4<${dataType}>`, dataType)}
+  ${erfImpl('vec4f')}
 
   ${shaderHelper.mainStart()}
     ${shaderHelper.guardAgainstOutOfBoundsWorkgroupSizes(outputSize)}
@@ -58,20 +57,16 @@ const createBiasSplitGeluProgramInfo = (metadata: ProgramMetadata, inputs: reado
   }`;
 
   return {
-    ...metadata,
-    outputs: [{dims: outputShape, dataType: inputs[0].dataType, gpuDataType: GpuDataType.default}],
+    name: 'BiasSplitGelu',
+    getRunData: () => ({
+      outputs: [{dims: outputShape, dataType: inputs[0].dataType}],
+      dispatchGroup: {x: Math.ceil(outputSize / 64 /* workgroup size */)}
+    }),
     getShaderSource,
-    dispatchGroup: () => ({x: Math.ceil(outputSize / 64 /* workgroup size */)})
   };
 };
 
 export const biasSplitGelu = (context: ComputeContext): void => {
   validateInputs(context.inputs);
-
-  const metadata = {
-    name: 'BiasSplitGelu',
-    inputTypes: [GpuDataType.default, GpuDataType.default],
-  };
-
-  context.compute(createBiasSplitGeluProgramInfo(metadata, context.inputs));
+  context.compute(createBiasSplitGeluProgramInfo(context.inputs));
 };

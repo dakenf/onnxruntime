@@ -9,9 +9,7 @@ const void* JsepOutput(void* context, int index, const void* data) {
   const uintptr_t* data_offset = reinterpret_cast<const uintptr_t*>(data);
   uintptr_t dim = *data_offset++;
   size_t dim_size = static_cast<size_t>(dim);
-  std::vector<int64_t> dims;
-  dims.reserve(dim_size);
-  dims.resize(dim_size);
+  std::vector<int64_t> dims(dim_size);
   for (size_t i = 0; i < dim_size; i++) {
     dims[i] = static_cast<int64_t>(*data_offset++);
   }

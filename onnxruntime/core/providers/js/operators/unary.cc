@@ -6,6 +6,12 @@
 namespace onnxruntime {
 namespace js {
 
+#define JSEP_ELEMENTWISE_TYPED_KERNEL(OP_TYPE, VERSION, TYPE, KERNEL_CLASS)        \
+  ONNX_OPERATOR_KERNEL_EX(                                                         \
+      OP_TYPE, kOnnxDomain, VERSION, kJsExecutionProvider,                         \
+      KernelDefBuilder().TypeConstraint("T", DataTypeImpl::GetTensorType<TYPE>()), \
+      KERNEL_CLASS);
+
 #define JSEP_ELEMENTWISE_KERNEL(OP_TYPE, VERSION, KERNEL_CLASS)          \
   ONNX_OPERATOR_KERNEL_EX(                                               \
       OP_TYPE, kOnnxDomain, VERSION, kJsExecutionProvider,               \
@@ -18,15 +24,30 @@ namespace js {
       KernelDefBuilder().TypeConstraint("T", JsepSupportedFloatTypes()),                   \
       KERNEL_CLASS);
 
+#define JSEP_ELEMENTWISE_MULTI_TYPED_KERNEL(OP_TYPE, VERSION, KERNEL_CLASS)             \
+  ONNX_OPERATOR_KERNEL_EX(                                                              \
+      OP_TYPE, kOnnxDomain, VERSION, kJsExecutionProvider,                              \
+      KernelDefBuilder().TypeConstraint("T", {DataTypeImpl::GetTensorType<float>(),     \
+                                              DataTypeImpl::GetTensorType<MLFloat16>(), \
+                                              DataTypeImpl::GetTensorType<int32_t>()}), \
+      KERNEL_CLASS);
+
+#define JSEP_ELEMENTWISE_MULTI_TYPED_VERSIONED_KERNEL(OP_TYPE, VERSION_FROM, VERSION_TO, KERNEL_CLASS) \
+  ONNX_OPERATOR_VERSIONED_KERNEL_EX(                                                                   \
+      OP_TYPE, kOnnxDomain, VERSION_FROM, VERSION_TO, kJsExecutionProvider,                            \
+      KernelDefBuilder().TypeConstraint("T", {DataTypeImpl::GetTensorType<float>(),                    \
+                                              DataTypeImpl::GetTensorType<MLFloat16>(),                \
+                                              DataTypeImpl::GetTensorType<int32_t>()}),                \
+      KERNEL_CLASS);
 // math
 
 JSEP_KERNEL_IMPL(Abs, Abs)
-JSEP_ELEMENTWISE_VERSIONED_KERNEL(Abs, 6, 12, Abs)
-JSEP_ELEMENTWISE_KERNEL(Abs, 13, Abs)
+JSEP_ELEMENTWISE_MULTI_TYPED_VERSIONED_KERNEL(Abs, 6, 12, Abs)
+JSEP_ELEMENTWISE_MULTI_TYPED_KERNEL(Abs, 13, Abs)
 
 JSEP_KERNEL_IMPL(Neg, Neg)
-JSEP_ELEMENTWISE_VERSIONED_KERNEL(Neg, 6, 12, Neg)
-JSEP_ELEMENTWISE_KERNEL(Neg, 13, Neg)
+JSEP_ELEMENTWISE_MULTI_TYPED_VERSIONED_KERNEL(Neg, 6, 12, Neg)
+JSEP_ELEMENTWISE_MULTI_TYPED_KERNEL(Neg, 13, Neg)
 
 JSEP_KERNEL_IMPL(Floor, Floor)
 JSEP_ELEMENTWISE_VERSIONED_KERNEL(Floor, 6, 12, Floor)
@@ -98,7 +119,7 @@ JSEP_ELEMENTWISE_VERSIONED_KERNEL(Tanh, 6, 12, Tanh)
 JSEP_ELEMENTWISE_KERNEL(Tanh, 13, Tanh)
 
 JSEP_KERNEL_IMPL(Not, Not)
-JSEP_ELEMENTWISE_KERNEL(Not, 1, Not)
+JSEP_ELEMENTWISE_TYPED_KERNEL(Not, 1, bool, Not)
 
 // activation
 
