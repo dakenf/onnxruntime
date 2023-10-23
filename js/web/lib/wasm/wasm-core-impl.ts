@@ -3,13 +3,13 @@
 
 import {Env, InferenceSession, Tensor} from 'onnxruntime-common';
 
-import {FSNode} from './binding/ort-wasm';
 import {SerializableModeldata, SerializableSessionMetadata, SerializableTensor} from './proxy-messages';
 import {setRunOptions} from './run-options';
 import {setSessionOptions} from './session-options';
 import {logLevelStringToEnum, tensorDataTypeEnumToString, tensorDataTypeStringToEnum, tensorTypeToTypedArrayConstructor} from './wasm-common';
 import {getInstance} from './wasm-factory';
 import {allocWasmString, checkLastError} from './wasm-utils';
+import WebAssemblyExecutionProviderOption = InferenceSession.WebAssemblyExecutionProviderOption
 
 /**
  * get the input/output count of the session.
@@ -72,19 +72,12 @@ const activeSessions = new Map<number, SessionMetadata>();
  * allocate the memory and memcpy the model bytes, preparing for creating an instance of InferenceSession.
  * @returns a 3-elements tuple - the pointer, size of the allocated buffer, and optional weights.pb FS node
  */
-export const createSessionAllocate = (model: Uint8Array, weights?: ArrayBuffer): [number, number, FSNode?] => {
+export const createSessionAllocate = (model: Uint8Array, weights?: ArrayBuffer): [number, number] => {
   const wasm = getInstance();
   const modelDataOffset = wasm._malloc(model.byteLength);
   wasm.HEAPU8.set(model, modelDataOffset);
 
-  let weightsFile: FSNode|undefined;
-  if (weights) {
-    weightsFile = wasm.FS.create('/home/web_user/model.onnx_data');
-    weightsFile.contents = weights;
-    weightsFile.usedBytes = weights.byteLength;
-    wasm.FS.chdir('/home/web_user');
-  }
-  return [modelDataOffset, model.byteLength, weightsFile];
+  return [modelDataOffset, model.byteLength];
 };
 
 /**
@@ -97,6 +90,19 @@ export const createSessionFinalize =
     (modelData: SerializableModeldata, options?: InferenceSession.SessionOptions): SerializableSessionMetadata => {
       const wasm = getInstance();
 
+      const externalWeightsOption: WebAssemblyExecutionProviderOption|undefined = options?.executionProviders?.find(e => (e as WebAssemblyExecutionProviderOption).externalWeights) as WebAssemblyExecutionProviderOption
+      let externalWeightsPath = ''
+      const modelDirectory = '/home/web_user/' + Math.random().toString(10).replace('.', '');
+      wasm.FS.mkdir(modelDirectory);
+      const modelName = modelDirectory + '/model.onnx';
+      if (externalWeightsOption) {
+        externalWeightsPath = `${modelDirectory}/${externalWeightsOption.externalWeightsFilename}`;
+        wasm.createFileFromArrayBuffer(externalWeightsPath, externalWeightsOption.externalWeights!);
+      }
+
+      wasm.createFileFromArrayBuffer(modelName, new Uint8Array(wasm.HEAPU8.buffer, modelData[0], modelData[1]));
+      wasm.FS.chdir(modelDirectory);
+
       let sessionHandle = 0;
       let sessionOptionsHandle = 0;
       let allocs: number[] = [];
@@ -105,6 +111,8 @@ export const createSessionFinalize =
 
       try {
         [sessionOptionsHandle, allocs] = setSessionOptions(options);
+        const modelDirStringPtr = allocWasmString(modelName, allocs);
+        sessionHandle = wasm._OrtCreateSessionFromFile(modelDirStringPtr, sessionOptionsHandle);
 
         sessionHandle = wasm._OrtCreateSession(modelData[0], modelData[1], sessionOptionsHandle);
         if (sessionHandle === 0) {
@@ -148,8 +156,8 @@ export const createSessionFinalize =
           wasm._OrtReleaseSessionOptions(sessionOptionsHandle);
         }
         allocs.forEach(alloc => wasm._free(alloc));
-        if (modelData[2]) {
-          wasm.FS.unlink('/home/web_user/model.onnx_data');
+        if (externalWeightsOption) {
+          wasm.FS.unlink(externalWeightsPath);
         }
       }
     };

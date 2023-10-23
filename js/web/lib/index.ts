@@ -7,8 +7,8 @@
 // So we import code inside the if-clause to allow terser remove the code safely.
 
 export * from 'onnxruntime-common';
-import {registerBackend, env} from 'onnxruntime-common';
-import {version} from './version';
+import {registerBackend} from 'onnxruntime-common';
+// import {version} from './version';
 
 if (!BUILD_DEFS.DISABLE_WEBGL) {
   const onnxjsBackend = require('./backend-onnxjs').onnxjsBackend;
@@ -20,10 +20,10 @@ if (!BUILD_DEFS.DISABLE_WASM) {
   // if (!BUILD_DEFS.DISABLE_WEBGPU && typeof navigator !== 'undefined' && navigator.gpu) {
   registerBackend('webgpu', wasmBackend, 1);
   // }
-  registerBackend('cpu', wasmBackend, 1);
+  // registerBackend('cpu', wasmBackend, 1000);
   registerBackend('wasm', wasmBackend, 1);
   registerBackend('xnnpack', wasmBackend, 9);
   registerBackend('webnn', wasmBackend, 9);
 }
 
-Object.defineProperty(env.versions, 'web', {value: version, enumerable: true});
+// Object.defineProperty(env.versions, 'web', {value: version, enumerable: true});
