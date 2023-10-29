@@ -20,6 +20,7 @@ export interface OrtWasmModule extends EmscriptenModule {
   stackSave(): number;
   stackRestore(stack: number): void;
   stackAlloc(size: number): number;
+  FS: {unlink(path: string): void; mkdir(path: string): void; chdir(path: string): void};
 
   UTF8ToString(offset: number, maxBytesToRead?: number): string;
   lengthBytesUTF8(str: string): number;
@@ -32,6 +33,7 @@ export interface OrtWasmModule extends EmscriptenModule {
   _OrtGetLastError(errorCodeOffset: number, errorMessageOffset: number): void;
 
   _OrtCreateSession(dataOffset: number, dataLength: number, sessionOptionsHandle: number): number;
+  _OrtCreateSessionFromFile(path: number, sessionOptionsHandle: number): number;
   _OrtReleaseSession(sessionHandle: number): void;
   _OrtGetInputOutputCount(sessionHandle: number, inputCountOffset: number, outputCountOffset: number): number;
   _OrtGetInputName(sessionHandle: number, index: number): number;
@@ -71,6 +73,8 @@ export interface OrtWasmModule extends EmscriptenModule {
   _OrtReleaseRunOptions(runOptionsHandle: number): void;
 
   _OrtEndProfiling(sessionHandle: number): number;
+
+  createFileFromArrayBuffer(path: string, buffer: ArrayBuffer): void;
   // #endregion
 
   // #region ORT Training APIs
