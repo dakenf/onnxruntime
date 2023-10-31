@@ -6,6 +6,6 @@
 Module["PTR_SIZE"] = 4;
 Module["createFileFromArrayBuffer"] = (path, buffer) => {
   const weightsFile = FS.create(path);
-  weightsFile.contents = buffer;
+  weightsFile.contents = new Uint8Array(buffer);
   weightsFile.usedBytes = buffer.byteLength;
 }
