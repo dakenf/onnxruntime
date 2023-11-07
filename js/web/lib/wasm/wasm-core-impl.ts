@@ -112,9 +112,11 @@ export const createSessionFinalize =
       try {
         [sessionOptionsHandle, allocs] = setSessionOptions(options);
         const modelDirStringPtr = allocWasmString(modelName, allocs);
-        sessionHandle = wasm._OrtCreateSessionFromFile(modelDirStringPtr, sessionOptionsHandle);
-
-        sessionHandle = wasm._OrtCreateSession(modelData[0], modelData[1], sessionOptionsHandle);
+        if (externalWeightsOption) {
+          sessionHandle = wasm._OrtCreateSessionFromFile(modelDirStringPtr, sessionOptionsHandle);
+        } else {
+          sessionHandle = wasm._OrtCreateSession(modelData[0], modelData[1], sessionOptionsHandle);
+        }
         if (sessionHandle === 0) {
           checkLastError('Can\'t create a session.');
         }
